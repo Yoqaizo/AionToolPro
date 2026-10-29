@@ -1,0 +1,575 @@
+<Window x:Class="AionToolPro.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="AionToolPro"
+        Icon="AionToolp.ico"
+        Width="1360" Height="850" MinWidth="1080" MinHeight="700"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WindowCanvasBrush}"
+        Foreground="{DynamicResource PrimaryTextBrush}"
+        FontFamily="Segoe UI">
+
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="Window.Loaded">
+            <BeginStoryboard>
+                <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                    <DoubleAnimation Storyboard.TargetName="PulseDot1" Storyboard.TargetProperty="Opacity" From="0.35" To="1.0" Duration="0:0:0.85"/>
+                    <DoubleAnimation Storyboard.TargetName="PulseDot2" Storyboard.TargetProperty="Opacity" From="0.35" To="1.0" Duration="0:0:0.85"/>
+                    <DoubleAnimation Storyboard.TargetName="PulseDot3" Storyboard.TargetProperty="Opacity" From="0.35" To="1.0" Duration="0:0:0.85"/>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
+
+    <Border BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="44"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- ==================== CUSTOM FRAMELESS TITLE BAR ==================== -->
+            <Border Grid.Row="0" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,0,0,1" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid Margin="16,0,10,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Top-Left: Only Green/Red Internet Status Light + AionToolPro Text -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse x:Name="HeaderStatusLed" Width="10" Height="10" Fill="#F43F5E" Margin="0,0,10,0" VerticalAlignment="Center" ToolTip="Internet Status">
+                            <Ellipse.Effect>
+                                <DropShadowEffect x:Name="HeaderStatusGlow" BlurRadius="10" ShadowDepth="0" Color="#F43F5E" Opacity="0.85"/>
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <TextBlock Text="AionToolPro" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Center Live Status Summary -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="12" Padding="12,3" Margin="0,0,8,0">
+                            <TextBlock x:Name="TxtHeaderQuickSummary" Text="4.2.2.4: --  ·  arvancloud.ir: --  ·  Router: --" FontSize="11" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource AccentBrush}"/>
+                        </Border>
+                        <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="12" Padding="10,3">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" FlowDirection="LeftToRight">
+                                <TextBlock x:Name="TxtSpeedDl" Text="⬇ 0 KB/s" FontSize="11" FontFamily="Consolas" Foreground="#10B981" Margin="0,0,8,0"/>
+                                <TextBlock x:Name="TxtSpeedUl" Text="⬆ 0 KB/s" FontSize="11" FontFamily="Consolas" Foreground="#F59E0B"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Window Chrome Buttons -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="—" Click="BtnMinimize_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Minimize"/>
+                        <Button Content="▢" Click="BtnMaximize_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Maximize"/>
+                        <Button Content="✕" Click="BtnClose_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Close" Foreground="#F43F5E"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ==================== MAIN WORKSPACE ==================== -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="245"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- ==================== SIDEBAR ==================== -->
+                <Border Grid.Column="0" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,0,1,0" Padding="14,16,14,12">
+                    <DockPanel LastChildFill="False">
+
+                        <!-- Network Adaptor Selector with Green / Orange / Red Status Dots -->
+                        <Border DockPanel.Dock="Top" Background="{DynamicResource CardSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,14">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock x:Name="LblNetworkAdaptor" Text="Network Adaptor" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center"/>
+                                    <Button Content="↻" Click="BtnRefreshAdapters_Click" Style="{StaticResource SecondaryBtnStyle}" HorizontalAlignment="Right" Padding="7,2" Margin="0" ToolTip="Scan Adaptors"/>
+                                </DockPanel>
+                                <ComboBox x:Name="InterfaceCombo" SelectionChanged="InterfaceCombo_SelectionChanged" Height="34" FlowDirection="LeftToRight">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Ellipse Width="9" Height="9" Fill="{Binding StatusBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Clean Navigation without Numbers -->
+                        <StackPanel DockPanel.Dock="Top">
+                            <RadioButton x:Name="NavDashboard" Content="⚡  Dashboard" IsChecked="True" Checked="Nav_Checked" Tag="Dashboard" Style="{StaticResource NavRadioStyle}"/>
+                            <RadioButton x:Name="NavDnsTools" Content="🌐  DNS Studio" Checked="Nav_Checked" Tag="DnsTools" Style="{StaticResource NavRadioStyle}"/>
+                            <RadioButton x:Name="NavNetworkInfo" Content="📡  Network Info" Checked="Nav_Checked" Tag="NetworkInfo" Style="{StaticResource NavRadioStyle}"/>
+                            <RadioButton x:Name="NavWifi" Content="📶  Wi-Fi Manager" Checked="Nav_Checked" Tag="Wifi" Style="{StaticResource NavRadioStyle}"/>
+                            <RadioButton x:Name="NavFixes" Content="🛡️  Fixes &amp; Hosts" Checked="Nav_Checked" Tag="Fixes" Style="{StaticResource NavRadioStyle}"/>
+                            <RadioButton x:Name="NavMaintenance" Content="🔧  Maintenance" Checked="Nav_Checked" Tag="Maintenance" Style="{StaticResource NavRadioStyle}"/>
+                            <RadioButton x:Name="NavSettings" Content="🎨  Settings" Checked="Nav_Checked" Tag="Settings" Style="{StaticResource NavRadioStyle}"/>
+                            <RadioButton x:Name="NavHelp" Content="❓  Help" Checked="Nav_Checked" Tag="Help" Style="{StaticResource NavRadioStyle}"/>
+                        </StackPanel>
+
+                        <!-- Bottom-Left: Only Subtle Version Number 0.5 -->
+                        <TextBlock DockPanel.Dock="Bottom" Text="0.6" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource MutedTextBrush}" Margin="6,0,0,2"/>
+                    </DockPanel>
+                </Border>
+
+                <!-- ==================== RIGHT MAIN CONTENT AREA ==================== -->
+                <Grid Grid.Column="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="140"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- ==================== TOP TELEMETRY STRIP (3 LIVE PINGS + ACTIVE DNS) ==================== -->
+                    <UniformGrid Grid.Row="0" Columns="4" Margin="18,14,8,4">
+
+                        <!-- 1. Global Ping: 4.2.2.4 -->
+                        <Border Style="{StaticResource TelemetryPingCardStyle}">
+                            <StackPanel>
+                                <DockPanel>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Ellipse x:Name="PulseDot1" Width="8" Height="8" Fill="#38BDF8" Margin="0,0,6,0"/>
+                                        <TextBlock x:Name="LblPingCard1" Text="GLOBAL · 4.2.2.4" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}"/>
+                                    </StackPanel>
+                                    <Border Background="#2238BDF8" CornerRadius="5" Padding="6,1.5" HorizontalAlignment="Right">
+                                        <TextBlock x:Name="TxtBadgeGlobal" Text="LIVE" FontSize="9" FontWeight="Bold" Foreground="#38BDF8"/>
+                                    </Border>
+                                </DockPanel>
+                                <DockPanel Margin="0,6,0,5" FlowDirection="LeftToRight">
+                                    <TextBlock x:Name="TxtPingGlobal" Text="-- ms" FontSize="20" FontWeight="Bold" FontFamily="Consolas" Foreground="#38BDF8"/>
+                                    <TextBlock x:Name="TxtJitterGlobal" Text="±0 ms" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
+                                </DockPanel>
+                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,5">
+                                    <Border x:Name="BarPingGlobal" HorizontalAlignment="Left" Width="35" CornerRadius="2" Background="#38BDF8"/>
+                                </Grid>
+                                <TextBlock x:Name="TxtStatsGlobal" Text="Min --  Avg --  Max --" FontSize="10.5" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 2. Intranet Ping: arvancloud.ir -->
+                        <Border Style="{StaticResource TelemetryPingCardStyle}">
+                            <StackPanel>
+                                <DockPanel>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Ellipse x:Name="PulseDot2" Width="8" Height="8" Fill="#10B981" Margin="0,0,6,0"/>
+                                        <TextBlock x:Name="LblPingCard2" Text="INTRANET · ARVAN" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}"/>
+                                    </StackPanel>
+                                    <Border Background="#2210B981" CornerRadius="5" Padding="6,1.5" HorizontalAlignment="Right">
+                                        <TextBlock x:Name="TxtBadgeIntranet" Text="LIVE" FontSize="9" FontWeight="Bold" Foreground="#10B981"/>
+                                    </Border>
+                                </DockPanel>
+                                <DockPanel Margin="0,6,0,5" FlowDirection="LeftToRight">
+                                    <TextBlock x:Name="TxtPingIntranet" Text="-- ms" FontSize="20" FontWeight="Bold" FontFamily="Consolas" Foreground="#10B981"/>
+                                    <TextBlock x:Name="TxtJitterIntranet" Text="±0 ms" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
+                                </DockPanel>
+                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,5">
+                                    <Border x:Name="BarPingIntranet" HorizontalAlignment="Left" Width="35" CornerRadius="2" Background="#10B981"/>
+                                </Grid>
+                                <TextBlock x:Name="TxtStatsIntranet" Text="Min --  Avg --  Max --" FontSize="10.5" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 3. PC to Router / Wi-Fi Delay -->
+                        <Border Style="{StaticResource TelemetryPingCardStyle}">
+                            <StackPanel>
+                                <DockPanel>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Ellipse x:Name="PulseDot3" Width="8" Height="8" Fill="#F59E0B" Margin="0,0,6,0"/>
+                                        <TextBlock x:Name="TxtRouterCardTitle" Text="PC ↔ ROUTER" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}"/>
+                                    </StackPanel>
+                                    <Border Background="#22F59E0B" CornerRadius="5" Padding="6,1.5" HorizontalAlignment="Right">
+                                        <TextBlock x:Name="TxtBadgeRouter" Text="GATEWAY" FontSize="9" FontWeight="Bold" Foreground="#F59E0B"/>
+                                    </Border>
+                                </DockPanel>
+                                <DockPanel Margin="0,6,0,5" FlowDirection="LeftToRight">
+                                    <TextBlock x:Name="TxtPingRouter" Text="-- ms" FontSize="20" FontWeight="Bold" FontFamily="Consolas" Foreground="#F59E0B"/>
+                                    <TextBlock x:Name="TxtJitterRouter" Text="±0 ms" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
+                                </DockPanel>
+                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,5">
+                                    <Border x:Name="BarPingRouter" HorizontalAlignment="Left" Width="35" CornerRadius="2" Background="#F59E0B"/>
+                                </Grid>
+                                <TextBlock x:Name="TxtStatsRouter" Text="Min --  Avg --  Max --" FontSize="10.5" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 4. Active System DNS & Traffic -->
+                        <Border Style="{StaticResource TelemetryPingCardStyle}">
+                            <StackPanel>
+                                <DockPanel>
+                                    <TextBlock x:Name="LblActiveDnsCard" Text="ACTIVE DNS" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center"/>
+                                    <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="5" Padding="6,1.5" HorizontalAlignment="Right">
+                                        <TextBlock x:Name="TxtAdapterState" Text="Connected" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
+                                    </Border>
+                                </DockPanel>
+                                <TextBlock x:Name="TxtActiveDns" Text="Detecting..." FontSize="14.5" FontWeight="Bold" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,8,0,6" TextTrimming="CharacterEllipsis"/>
+                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,5">
+                                    <Border HorizontalAlignment="Stretch" CornerRadius="2" Background="{DynamicResource AccentGradientBrush}"/>
+                                </Grid>
+                                <TextBlock x:Name="TxtDataUsage" Text="Rx 0.0 MB  ·  Tx 0.0 MB" FontSize="10.5" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}"/>
+                            </StackPanel>
+                        </Border>
+                    </UniformGrid>
+
+                    <!-- ==================== SCROLLABLE MODULE VIEWS ==================== -->
+                    <ScrollViewer Grid.Row="1" Padding="18,10,18,12" VerticalScrollBarVisibility="Auto">
+                        <Grid x:Name="WorkspaceAnimatedRoot" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="WorkspaceSlideTransform" X="0" Y="0"/>
+                            </Grid.RenderTransform>
+
+                            <!-- ==================== VIEW: DASHBOARD ==================== -->
+                            <StackPanel x:Name="ViewDashboard" Visibility="Visible">
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock x:Name="LblDashStatusHeader" Text="SYSTEM NETWORK STATUS" FontSize="13.5" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
+                                            <TextBlock x:Name="TxtDashboardAdapterSummary"
+                                                       Text="Scanning active Windows adaptor..."
+                                                       FontFamily="Consolas" FontSize="12"
+                                                       FlowDirection="LeftToRight"
+                                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                                       Margin="0,6,12,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+
+                                        <WrapPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                            <Button x:Name="BtnGameBooster" Content="🎮 Game Booster" Click="BtnGameBooster_Click" Style="{StaticResource DangerBtnStyle}" Margin="0,0,8,0"/>
+                                            <Button x:Name="BtnDashFastestDns" Content="⚡ Fastest DNS" Click="BtnBenchmarkDns_Click" Style="{StaticResource PrimaryBtnStyle}" Margin="0,0,8,0"/>
+                                            <Button x:Name="BtnDashAutoDns" Content="↺ Automatic DNS" Click="BtnResetDnsDhcp_Click" Style="{StaticResource SecondaryBtnStyle}" Margin="0,0,8,0"/>
+                                            <Button x:Name="BtnDashFlushDns" Content="🧹 Flush Cache" Click="BtnFlushDns_Click" Style="{StaticResource SecondaryBtnStyle}" Margin="0"/>
+                                        </WrapPanel>
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblDashQuickDnsTitle" Text="QUICK DNS SWITCHER" FontSize="14.5" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel x:Name="DashboardDnsWrapPanel" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- ==================== VIEW: DNS STUDIO ==================== -->
+                            <StackPanel x:Name="ViewDnsTools" Visibility="Collapsed">
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblDnsConfigTitle" Text="DNS Configurator" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel VerticalAlignment="Center" Margin="0,0,0,10">
+                                            <ComboBox x:Name="ComboDnsProviders" Width="350" Height="34" FlowDirection="LeftToRight" Margin="0,0,10,8"/>
+                                            <Button x:Name="BtnApplySelectedDns" Content="Apply Selected DNS" Click="BtnApplySelectedDns_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                        </WrapPanel>
+                                        <TextBlock x:Name="LblCustomDnsTitle" Text="Custom IPv4 DNS" FontSize="12" FontWeight="Bold" Margin="0,2,0,6"/>
+                                        <WrapPanel VerticalAlignment="Center">
+                                            <TextBlock x:Name="LblPrimaryDns" Text="Primary:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                            <TextBox x:Name="TxtCustomDns1" Width="150" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="1.1.1.1" Margin="0,0,14,8"/>
+                                            <TextBlock x:Name="LblSecondaryDns" Text="Secondary:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                            <TextBox x:Name="TxtCustomDns2" Width="150" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="1.0.0.1" Margin="0,0,14,8"/>
+                                            <Button x:Name="BtnApplyCustomDns" Content="Apply Custom DNS" Click="BtnApplyCustomDns_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblDnsBenchTitle" Text="DNS Benchmark &amp; Actions" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel>
+                                            <Button x:Name="BtnBenchmarkDns" Content="⚡ Benchmark All DNS" Click="BtnBenchmarkDns_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnApplyFastestWinner" Content="✓ Apply Fastest" Click="BtnApplyFastestWinner_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnScanCurrentDns" Content="Scan Current DNS" Click="BtnScanCurrentDns_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnResetDns" Content="Automatic DNS" Click="BtnResetDnsDhcp_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnFlushCache" Content="Flush DNS Cache" Click="BtnFlushDns_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnFullAdapterReset" Content="Reset Adaptor" Click="BtnFullAdapterReset_Click" Style="{StaticResource DangerBtnStyle}"/>
+                                        </WrapPanel>
+                                        <DataGrid x:Name="GridDnsBenchmark" AutoGenerateColumns="True" IsReadOnly="True" FlowDirection="LeftToRight" Height="200" Margin="0,8,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblDohBackupTitle" Text="DNS Backup &amp; Encrypted DoH" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel>
+                                            <Button x:Name="BtnBackupDns" Content="Backup DNS" Click="BtnBackupDns_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnRestoreDns" Content="Restore Backup" Click="BtnRestoreDns_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnShowDnsBackup" Content="View Backup" Click="BtnShowDnsBackup_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnDohCloudflare" Content="🔒 Cloudflare DoH" Click="BtnDohCloudflare_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnDohGoogle" Content="🔒 Google DoH" Click="BtnDohGoogle_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnDohQuad9" Content="🔒 Quad9 DoH" Click="BtnDohQuad9_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnDohShow" Content="DoH Status" Click="BtnDohShow_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnDohRemove" Content="Remove DoH" Click="BtnDohRemove_Click" Style="{StaticResource DangerBtnStyle}"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- ==================== VIEW: NETWORK INFO ==================== -->
+                            <StackPanel x:Name="ViewNetworkInfo" Visibility="Collapsed">
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblNetToolsTitle" Text="Network Inspection" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel>
+                                            <Button x:Name="BtnSpeedTest" Content="🚀 Speed Test" Click="BtnSpeedTest_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnNatAnalyzer" Content="🌍 NAT Analyzer" Click="BtnNatAnalyzer_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnIpInfo" Content="IP &amp; MAC Info" Click="BtnIpInfo_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnPublicIp" Content="Public IP" Click="BtnPublicIp_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnActiveConnections" Content="Active TCP Connections" Click="BtnActiveConnections_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnDataUsage" Content="Data Usage" Click="BtnDataUsage_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnDnsLookup" Content="DNS Lookup" Click="BtnDnsLookup_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnDnsLeakCheck" Content="DNS Leak Check" Click="BtnDnsLeakCheck_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblPingPortTitle" Text="Ping Monitor, Traceroute &amp; Port Scanner" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel VerticalAlignment="Center" Margin="0,0,0,6">
+                                            <TextBlock x:Name="LblTargetHost" Text="Host:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                            <TextBox x:Name="TxtNetTargetHost" Width="190" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="www.arvancloud.ir" Margin="0,0,12,8"/>
+                                            <TextBlock x:Name="LblPackets" Text="Packets:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                            <ComboBox x:Name="ComboPingPackets" Width="85" Height="34" FlowDirection="LeftToRight" SelectedIndex="0" Margin="0,0,12,8">
+                                                <ComboBoxItem Content="20"/>
+                                                <ComboBoxItem Content="50"/>
+                                                <ComboBoxItem Content="100"/>
+                                                <ComboBoxItem Content="200"/>
+                                            </ComboBox>
+                                            <Button x:Name="BtnPingMonitor" Content="Ping Monitor" Click="BtnPingMonitor_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnTraceroute" Content="Traceroute" Click="BtnTraceroute_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <TextBlock x:Name="LblPort" Text="Port:" VerticalAlignment="Center" Margin="8,0,6,8"/>
+                                            <TextBox x:Name="TxtPortNumber" Width="85" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="443" Margin="0,0,10,8"/>
+                                            <Button x:Name="BtnPortCheck" Content="Check Port" Click="BtnPortCheck_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                        </WrapPanel>
+                                        <TextBox x:Name="TxtNetInfoReport" IsReadOnly="True" FontFamily="Consolas" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="260" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- ==================== VIEW: WI-FI MANAGER ==================== -->
+                            <StackPanel x:Name="ViewWifi" Visibility="Collapsed">
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblWifiVaultTitle" Text="Wi-Fi Status &amp; Saved Passwords" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel>
+                                            <Button x:Name="BtnWifiStatus" Content="Wi-Fi Status" Click="BtnWifiStatus_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnWifiPasswords" Content="🔑 Saved Passwords" Click="BtnWifiPasswords_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnWifiCopyPassword" Content="📋 Copy Password" Click="BtnWifiCopyPassword_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnWifiForget" Content="🗑️ Forget Network" Click="BtnWifiForget_Click" Style="{StaticResource DangerBtnStyle}"/>
+                                        </WrapPanel>
+                                        <DataGrid x:Name="GridWifiPasswords" AutoGenerateColumns="True" IsReadOnly="True" FlowDirection="LeftToRight" Height="220" Margin="0,8,0,10"/>
+                                        <TextBox x:Name="TxtWifiDetails" IsReadOnly="True" FontFamily="Consolas" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="160" VerticalScrollBarVisibility="Auto"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- ==================== VIEW: FIXES & HOSTS ==================== -->
+                            <StackPanel x:Name="ViewFixes" Visibility="Collapsed">
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblStaticIpTitle" Text="Static IPv4 &amp; DHCP" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel VerticalAlignment="Center">
+                                            <TextBlock Text="IPv4:" VerticalAlignment="Center" Margin="0,0,6,8"/>
+                                            <TextBox x:Name="TxtStaticIp" Width="135" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="192.168.1.50" Margin="0,0,12,8"/>
+                                            <TextBlock Text="Mask:" VerticalAlignment="Center" Margin="0,0,6,8"/>
+                                            <TextBox x:Name="TxtStaticMask" Width="135" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="255.255.255.0" Margin="0,0,12,8"/>
+                                            <TextBlock Text="Gateway:" VerticalAlignment="Center" Margin="0,0,6,8"/>
+                                            <TextBox x:Name="TxtStaticGateway" Width="135" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="192.168.1.1" Margin="0,0,14,8"/>
+                                            <Button x:Name="BtnApplyStaticIp" Content="Apply Static IP" Click="BtnApplyStaticIp_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnSwitchIpDhcp" Content="Automatic DHCP" Click="BtnSwitchIpDhcp_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblHostsStudioTitle" Text="Hosts File &amp; Blocklists" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel>
+                                            <Button x:Name="BtnHostsShow" Content="Show Custom Rules" Click="BtnHostsShow_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnHostsNotepad" Content="Open in Notepad" Click="BtnHostsNotepad_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnHostsBackup" Content="Backup Hosts" Click="BtnHostsBackup_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnHostsRestore" Content="Restore Backup" Click="BtnHostsRestore_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnHostsResetDefault" Content="Reset Default" Click="BtnHostsResetDefault_Click" Style="{StaticResource DangerBtnStyle}"/>
+                                        </WrapPanel>
+                                        <WrapPanel VerticalAlignment="Center" Margin="0,6,0,0">
+                                            <ComboBox x:Name="ComboBlocklists" Width="360" Height="34" FlowDirection="LeftToRight" Margin="0,0,10,8"/>
+                                            <Button x:Name="BtnApplyBlocklist" Content="➕ Apply Blocklist" Click="BtnApplyBlocklist_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnRemoveBlocklist" Content="➖ Remove Blocklist" Click="BtnRemoveBlocklist_Click" Style="{StaticResource DangerBtnStyle}"/>
+                                        </WrapPanel>
+                                        <TextBox x:Name="TxtHostsPreview" IsReadOnly="True" FontFamily="Consolas" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="150" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblNetRepairTitle" Text="Proxy, Firewall &amp; Network Repair" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel>
+                                            <Button x:Name="BtnProxyView" Content="Proxy Status" Click="BtnProxyView_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnProxyDisable" Content="Disable Proxy" Click="BtnProxyDisable_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnFirewallReset" Content="Reset Firewall" Click="BtnFirewallReset_Click" Style="{StaticResource DangerBtnStyle}"/>
+                                            <Button x:Name="BtnArpReset" Content="Clear ARP &amp; Routes" Click="BtnArpReset_Click" Style="{StaticResource SecondaryBtnStyle}"/>
+                                            <Button x:Name="BtnFullNetRepair" Content="Full Network Repair" Click="BtnFullNetRepair_Click" Style="{StaticResource DangerBtnStyle}"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- ==================== VIEW: MAINTENANCE ==================== -->
+                            <StackPanel x:Name="ViewMaintenance" Visibility="Collapsed">
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblMaintTempTitle" Text="Temporary Files Cleaner" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <Button x:Name="BtnCleanTemp" Content="🧹 Clean Temp Files" Click="BtnCleanTemp_Click" Style="{StaticResource PrimaryBtnStyle}" HorizontalAlignment="Left"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblMaintDismTitle" Text="Windows System File Repair" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <Button x:Name="BtnDismSfc" Content="🛡️ Run DISM &amp; SFC Repair" Click="BtnDismSfc_Click" Style="{StaticResource PrimaryBtnStyle}" HorizontalAlignment="Left"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblMaintUpdateTitle" Text="Windows Update Cache Reset" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <Button x:Name="BtnWindowsUpdateReset" Content="🔄 Reset Windows Update" Click="BtnWindowsUpdateReset_Click" Style="{StaticResource DangerBtnStyle}" HorizontalAlignment="Left"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- ==================== VIEW: SETTINGS (THEMES + DARK MODE + LANGUAGE) ==================== -->
+                            <StackPanel x:Name="ViewSettings" Visibility="Collapsed">
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblThemeStudioTitle" Text="Themes, Language &amp; Preferences" FontSize="15.5" FontWeight="Bold" Margin="0,0,0,12"/>
+
+                                        <WrapPanel x:Name="ThemeSwatchesWrapPanel" Margin="0,0,0,12"/>
+
+                                        <WrapPanel VerticalAlignment="Center">
+                                            <TextBlock x:Name="LblThemeSelect" Text="Theme:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                            <ComboBox x:Name="ComboThemes" Width="280" Height="34" FlowDirection="LeftToRight" SelectionChanged="ComboThemes_SelectionChanged" Margin="0,0,16,8"/>
+
+                                            <TextBlock x:Name="LblLanguageSelect" Text="Language:" VerticalAlignment="Center" Margin="0,0,8,8"/>
+                                            <ComboBox x:Name="ComboLanguage" Width="130" Height="34" SelectionChanged="ComboLanguage_SelectionChanged" Margin="0,0,18,8">
+                                                <ComboBoxItem Content="English" Tag="en"/>
+                                                <ComboBoxItem Content="فارسی" Tag="fa"/>
+                                            </ComboBox>
+
+                                            <CheckBox x:Name="ChkDarkMode" Content="Dark Mode" IsChecked="True" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,16,8" Checked="ChkDarkMode_Changed" Unchecked="ChkDarkMode_Changed"/>
+                                            <CheckBox x:Name="ChkRememberSettings" Content="Remember Settings" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,16,8" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
+                                            <CheckBox x:Name="ChkEnableLogging" Content="Save Action Log" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,0,8" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="LblActionLogTitle" Text="Action Log" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        <WrapPanel>
+                                            <Button x:Name="BtnViewLog" Content="Refresh Log" Click="BtnViewLog_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnClearLog" Content="Clear Log" Click="BtnClearLog_Click" Style="{StaticResource DangerBtnStyle}"/>
+                                        </WrapPanel>
+                                        <TextBox x:Name="TxtActionLogContent" IsReadOnly="True" FontFamily="Consolas" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="220" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- ==================== VIEW: HELP (COMPLETE ENGLISH VISUAL FAQ) ==================== -->
+                            <StackPanel x:Name="ViewHelp" Visibility="Collapsed" FlowDirection="LeftToRight">
+                                <Border Style="{StaticResource SectionCardStyle}">
+                                    <StackPanel>
+                                        <TextBlock Text="AionToolPro — Complete Feature &amp; Button Guide" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
+                                        <TextBlock Text="Visual reference explaining every indicator, button, and tool inside AionToolPro." FontSize="12" Foreground="{DynamicResource MutedTextBrush}" Margin="0,3,0,14"/>
+
+                                        <UniformGrid Columns="2">
+                                            <!-- Card 1 -->
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,8,10">
+                                                <StackPanel>
+                                                    <TextBlock Text="⚡ Top Status Light &amp; Network Adaptor" FontWeight="Bold" FontSize="13.5" Foreground="#38BDF8" Margin="0,0,0,6"/>
+                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
+                                                               Text="• Top-Left Status Light: Shows Green when your PC has active internet connectivity and turns Red immediately if connection drops.&#x0a;• Network Adaptor Dots: Automatically scans real hardware interfaces on startup. Green = Connected, Orange = Enabled but Disconnected, Red = Disabled.&#x0a;• Live Windows Sync: Detects external IP or DNS changes made in Windows Control Panel automatically."/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Card 2 -->
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="8,0,0,10">
+                                                <StackPanel>
+                                                    <TextBlock Text="📊 Triple Live Ping Monitors" FontWeight="Bold" FontSize="13.5" Foreground="#10B981" Margin="0,0,0,6"/>
+                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
+                                                               Text="• Global 4.2.2.4: Measures live international internet latency, jitter, and min/avg/max round-trip times.&#x0a;• Intranet Arvan: Measures domestic national network latency to www.arvancloud.ir.&#x0a;• PC to Router: Automatically detects your local default gateway IP and measures Wi-Fi or LAN cable delay to your router."/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Card 3 -->
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,8,10">
+                                                <StackPanel>
+                                                    <TextBlock Text="🌐 DNS Studio &amp; Encrypted DoH" FontWeight="Bold" FontSize="13.5" Foreground="#F59E0B" Margin="0,0,0,6"/>
+                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
+                                                               Text="• Quick DNS Cards: Click any card on the Dashboard to apply Iranian anti-sanction gaming DNS or global public DNS and flush the cache in one click.&#x0a;• Benchmark All DNS: Pings all 16 DNS servers simultaneously and finds the lowest-latency server for your connection.&#x0a;• Encrypted DoH: Enables Windows 11 DNS-over-HTTPS encryption for Cloudflare, Google, or Quad9."/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Card 4 -->
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="8,0,0,10">
+                                                <StackPanel>
+                                                    <TextBlock Text="📡 Network Info &amp; Diagnostics" FontWeight="Bold" FontSize="13.5" Foreground="#A855F7" Margin="0,0,0,6"/>
+                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
+                                                               Text="• IP &amp; MAC Info: Displays detailed IPv4, subnet mask, gateway, DNS servers, and physical MAC address.&#x0a;• Public IP: Queries ipinfo.io to show your external IP address, country, and ISP organization.&#x0a;• Ping Monitor, Traceroute &amp; Port Check: Tests connection stability, traces up to 20 network hops, or checks if a specific TCP port is open."/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Card 5 -->
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,8,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="📶 Wi-Fi Manager &amp; Hosts Blocklists" FontWeight="Bold" FontSize="13.5" Foreground="#FB923C" Margin="0,0,0,6"/>
+                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
+                                                               Text="• Saved Passwords: Extracts clear-text passwords for all Wi-Fi networks stored on your PC and lets you copy or forget them.&#x0a;• Hosts Blocklists: Downloads and applies ad-blocking, malware-blocking, or TeamSpeak rule lists into the Windows hosts file with automatic backup."/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Card 6 -->
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="8,0,0,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="🛡️ Network Fixes &amp; Windows Maintenance" FontWeight="Bold" FontSize="13.5" Foreground="#F43F5E" Margin="0,0,0,6"/>
+                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
+                                                               Text="• Disable Proxy: Turns off leftover system proxies set by VPNs that block internet access.&#x0a;• Full Network Repair: Resets Winsock catalog, TCP/IP stack, ARP cache, and firewall rules.&#x0a;• Maintenance: Cleans Windows Temp folders, runs DISM + SFC system file repair, and resets stuck Windows Update components."/>
+                                                </StackPanel>
+                                            </Border>
+                                        </UniformGrid>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                        </Grid>
+                    </ScrollViewer>
+
+                    <!-- ==================== BOTTOM CONSOLE STREAM ==================== -->
+                    <Border Grid.Row="2" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,1,0,0" Padding="18,8">
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                                <TextBlock x:Name="LblConsoleHeader" Text="▶ LIVE COMMAND STREAM" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button x:Name="BtnCancelCommand" Content="⏹ Stop" Click="BtnCancelCommand_Click" Style="{StaticResource DangerBtnStyle}" Padding="10,2" Margin="0,0,6,0" ToolTip="Cancel running command"/>
+                                    <Button x:Name="BtnClearConsole" Content="Clear" Click="BtnClearConsole_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="10,2" Margin="0"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <TextBox x:Name="ConsoleOutputBox" IsReadOnly="True" FontFamily="Consolas" FontSize="11.5" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Background="{DynamicResource InputSurfaceBrush}" Foreground="{DynamicResource PrimaryTextBrush}" BorderThickness="1" BorderBrush="{DynamicResource BorderHairlineBrush}" Padding="8,5" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
