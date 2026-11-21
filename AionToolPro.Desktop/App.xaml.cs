@@ -34,7 +34,7 @@ namespace AionToolPro.Desktop
             AppDomain.CurrentDomain.UnhandledException += OnCurrentDomainUnhandledException;
             SessionEnding += OnSessionEnding;
 
-            const string mutexName = @"Global\AionToolPro_SingleInstance_Mutex_v083";
+            const string mutexName = @"Global\AionToolPro_SingleInstance_Mutex";
             try
             {
                 _singleInstanceMutex = new Mutex(true, mutexName, out bool createdNew);
