@@ -1,97 +1,78 @@
-<div align="center">
-  <img src="AionToolPro.Desktop/AionToolp.png" width="128" height="128" alt="AionToolPro Logo">
-  <h1>AionToolPro</h1>
-  <p><strong>A Modern, Discord-Themed Windows Network Management & Troubleshooting Utility</strong></p>
-  
-  <p>
-    <img src="https://img.shields.io/badge/Version-0.6-5865F2?style=for-the-badge&logo=csharp&logoColor=white" alt="Version 0.6">
-    <img src="https://img.shields.io/badge/Platform-Windows-0B0E14?style=for-the-badge&logo=windows&logoColor=white" alt="Platform Windows">
-    <img src="https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 8.0">
-    <img src="https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge" alt="License GPLv3">
-  </p>
-</div>
+<p align="center">
+  <img src="AionToolPro.Desktop/AionToolp.png" alt="AionToolPro Logo" width="128" height="128" />
+</p>
+
+<h1 align="center">AionToolPro</h1>
+
+<p align="center">
+  <strong>Modern Windows DNS, Network Telemetry, Diagnostics &amp; System Optimization Suite</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Version-0.8.3-5865F2?style=for-the-badge" alt="Version 0.8.3" />
+  <img src="https://img.shields.io/badge/.NET-8.0%20WPF-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 8.0 WPF" />
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10/11 x64" />
+  <img src="https://img.shields.io/badge/License-GPL--3.0-10B981?style=for-the-badge" alt="GPL-3.0 License" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/Yoqaizo/AionToolPro/releases/latest">Download Latest Release</a> &bull;
+  <a href="CHANGELOG.md">Changelog</a> &bull;
+  <a href="https://github.com/Yoqaizo/AionToolPro/issues">Report an Issue</a>
+</p>
 
 ---
 
-## 🚀 Overview
+## Overview
 
-**AionToolPro** is a professional-grade, open-source desktop application built with **C# WPF (.NET 8.0)**, designed to replace legacy script-based network utilities with a lightning-fast, modern, and aesthetic **Discord-inspired dark UI**. 
+**AionToolPro** is a native Windows desktop utility built with C# and .NET 8 WPF designed for gamers, network engineers, and power users. It combines real-time multi-target latency telemetry, native RFC 1035 UDP/53 DNS benchmarking, Windows 11 DNS-over-HTTPS (DoH) management, IPv4/IPv6 per-application socket inspection, atomic Hosts blocklist management, and safe Windows maintenance tools in a sharp, high-DPI PerMonitorV2 interface with English and Persian (RTL) localization.
 
-It provides advanced network diagnostics, 16+ built-in DNS providers with one-click switching, MTU optimization, live telemetry and speed monitoring, real-time multi-channel ping tracking, and Windows firewall app-blocking capabilities.
+## Features
 
----
+| Module | Capabilities |
+| :--- | :--- |
+| **Live Telemetry Strip** | Real-time Global (`4.2.2.4`), Intranet (`arvancloud.ir`), and auto-detected Local Router gateway latency, jitter, packet loss, and live download/upload speedometers. |
+| **DNS Studio &amp; Custom Profiles** | 22 built-in Iranian anti-sanction, gaming, privacy, and global DNS presets plus persistent custom DNS profiles, automatic IPv6 leak cleanup, non-destructive JSON backups, and one-click DHCP reset. |
+| **True UDP/53 DNS Benchmark** | Sends native RFC 1035 DNS A-record queries over UDP port 53 across all resolvers concurrently with zero external NuGet dependencies. |
+| **Encrypted DoH (Windows 11)** | Enables native Windows 11 DNS-over-HTTPS (`udpfallback=yes`) for Cloudflare, Google, and Quad9 with scoped removal that preserves user-defined rules. |
+| **Diagnostics &amp; STUN NAT** | RFC 5389 dual-server UDP STUN NAT analyzer (Open / Cone / Symmetric + RFC 6598 CGNAT detection), 2-stream Cloudflare speed test, Game Server Ping matrix, Traceroute, Ping Monitor, and TCP Port Scanner. |
+| **Active Connections &amp; Firewall** | Native Win32 `GetExtendedTcpTable` (`AF_INET` &amp; `AF_INET6`) monitor with search filter, protected system process guard, and SHA-256 path-hashed Windows Firewall blocking with persistent unblock management. |
+| **Wi-Fi &amp; Atomic Hosts Manager** | Language-independent Wi-Fi profile extraction (masked by default, securely wiped temp XML) and atomic UTF-8 (no BOM) Hosts blocklist management with multi-host parsing and automatic backups. |
+| **Safe Game Booster &amp; Maintenance** | Suspends only currently running non-essential Windows services with exact state restoration, 24-hour guarded Temp cleanup (protecting `%TEMP%\.net`), DISM/SFC repair, and safe Windows Update cache reset. |
+| **Tray, Themes &amp; Auto-Updater** | Native Win32 System Tray with live ping tooltip and quick DNS menu, elevated Start-with-Windows via Task Scheduler, 10 themes + 9 surface palettes, settings Export/Import, and SHA-256 verified GitHub Releases auto-updater. |
 
-## ✨ Key Features
+## Security Architecture
 
-- 🎨 **Modern Discord UI**: Frameless window design featuring custom title bars, ultra-thin custom scrollbars, and a clean dark theme palette.
-- 🌐 **Comprehensive DNS Catalog**: Over 16 global and anti-sanction DNS providers (including Shecan, Electro, Radar Game, Cloudflare, Google, Quad9, and AdGuard) with auto-configuration and backup/restore features.
-- ⚡ **Live Multi-Channel Ping & Telemetry**: Monitor Global, Local, and Gateway latencies in real time alongside a built-in live network interface speedmeter (`Rx/Tx`).
-- 🛡️ **Firewall & App Blocker**: Easily restrict or block any executable (`.exe`) from accessing the internet via Windows Advanced Firewall rules.
-- 🔧 **MTU & Network Optimizer**: Scan and determine the optimal maximum transmission unit to eliminate packet loss and latency spikes during gaming.
-- 🛑 **Process Control & Live Stream**: Cancel long-running CLI or system diagnostics commands instantly using the built-in `⏹ Stop` mechanism.
-- 🌍 **Dual-Language Support**: Seamlessly switch between English and Persian (فارسی).
-- 🛎️ **System Tray Integration**: Minimize to the Windows system tray to run network telemetry seamlessly in the background.
+- **Strict System32 Execution:** All OS utilities (`netsh`, `ipconfig`, `ping`, `tracert`, `nslookup`, `DISM`, `sfc`, `schtasks`, `icacls`, `taskkill`) are resolved strictly from `System32` and invoked via `ProcessStartInfo.ArgumentList` to prevent Path Hijacking and Argument Injection.
+- **Hardened Auto-Updater:** Enforces TLS 1.2/1.3, validates trusted GitHub HTTPS hosts both before and after redirects, stages installers inside an NTFS ACL-locked `%ProgramData%\AionToolPro\Updates` directory (`SYSTEM` and `Administrators` only), verifies the Windows `MZ` PE header, and checks `SHA-256` against `checksums.txt`.
+- **Safe Elevated File I/O:** Checks `FileAttributes.ReparsePoint` before elevated writes or cleanups, uses atomic `File.Replace` for Hosts and settings, and preserves `%TEMP%\.net` extraction caches.
 
----
+> **Why Administrator Privileges Are Required:** AionToolPro requests `<requestedExecutionLevel level="requireAdministrator" />` to configure network adapters (`netsh`), manage Windows Defender Firewall rules, update `C:\Windows\System32\drivers\etc\hosts`, configure Windows 11 DoH, and manage Windows services.
 
-## 🛠️ Tech Stack
+## Installation
 
-- **Language**: C# 12 / .NET 8.0 (Windows-specific)
-- **Framework**: Windows Presentation Foundation (WPF)
-- **UI Architecture**: Custom XAML styles, Dynamic Theme Manager, and Discord-styled layouts.
-- **Deployment**: Portable Standalone Exe & Inno Setup professional installer script.
+1. Download the latest `AionToolPro_Setup_v0.8.3.exe` and `checksums.txt` from the [GitHub Releases](https://github.com/Yoqaizo/AionToolPro/releases/latest) page.
+2. *(Optional)* Verify the installer integrity in PowerShell:
+   ```powershell
+   Get-FileHash .\AionToolPro_Setup_v0.8.3.exe -Algorithm SHA256
+   ```
+3. Run the installer and follow the setup wizard.
 
----
-
-## 📦 Installation & Getting Started
+## Building from Source
 
 ### Prerequisites
-- Windows 10 / 11 (64-bit)
-- Administrator privileges (required for modifying network adapters, DNS, and firewall configurations).
+- Windows 10 or Windows 11 (x64)
+- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 
-### Method 1: Pre-built Release (Recommended)
-1. Download the latest `AionToolPro_Setup.exe` from the [Releases](../../releases) page.
-2. Run the installer and follow the on-screen instructions. A shortcut will be automatically created on your desktop.
+### Build Commands
+```powershell
+# Compile Release build
+dotnet build AionToolPro.Desktop\AionToolPro.Desktop.csproj -c Release --no-incremental
 
-### Method 2: Running from Source / Development
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/YourUsername/AionToolPro.git
-   cd AionToolPro
-   ```
-2. Open the solution in **Visual Studio 2022** (.NET 8.0 SDK required).
-3. Right-click `Run-As-Admin.bat` in the root directory to launch the application with administrator privileges, or build the solution directly.
+# Publish self-contained single-file x64 executable
+dotnet publish AionToolPro.Desktop\AionToolPro.Desktop.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:PublishReadyToRun=true /p:EnableCompressionInSingleFile=true /p:DebugType=None /p:DebugSymbols=false
+```
 
----
+## License
 
-## 💡 Usage Guide
-
-- **Dashboard**: View your active network adapter health state (Connected/Disconnected/Disabled), live upload/download speed metrics, and quick diagnostic toggles.
-- **DNS Switcher**: Select your preferred DNS provider from the catalog and click **Apply DNS** to route your traffic instantly.
-- **Live Ping & Tracert**: Track packet response times line-by-line. Use the **Stop** button anytime to cancel the operation safely.
-- **System Tray**: Closing the window will minimize AionToolPro to the tray. Right-click the tray icon to quickly switch popular DNS profiles or exit the application.
-
----
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](../../issues).
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is open-source software licensed under the **GNU General Public License v3.0 (GPL-3.0)**. 
-
-See the [LICENSE](LICENSE) file for more details.
-
----
-<div align="center">
-  <p>Developed with ❤️ by <strong>TheYoqaizo</strong></p>
-</div>
+This project is licensed under the **GNU General Public License v3.0** — see the [LICENSE](LICENSE) file for details.
