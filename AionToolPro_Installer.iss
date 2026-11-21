@@ -22,6 +22,7 @@ UninstallDisplayIcon={app}\AionToolPro.exe
 Compression=lzma2/ultra64
 SolidCompression=yes
 PrivilegesRequired=admin
+UsedUserAreasWarning=no
 #if VER >= 0x06030000
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
