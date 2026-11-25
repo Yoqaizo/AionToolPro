@@ -9,7 +9,7 @@ namespace AionToolPro.Desktop.Services
 {
     public sealed class TrayIconManager : IDisposable
     {
-        private const int WM_GETMINMAXINFO = 0x0024;
+        private const int WM_DPICHANGED = 0x02E0;
         private const int WM_TRAYICON = 0x8000 + 42;
         private const int WM_LBUTTONDBLCLK = 0x0203;
         private const int WM_RBUTTONUP = 0x0205;
@@ -20,7 +20,6 @@ namespace AionToolPro.Desktop.Services
         private const uint NIF_MESSAGE = 0x00000001;
         private const uint NIF_ICON = 0x00000002;
         private const uint NIF_TIP = 0x00000004;
-        private const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         private struct NOTIFYICONDATA
@@ -45,41 +44,6 @@ namespace AionToolPro.Desktop.Services
             public IntPtr hBalloonIcon;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct POINT
-        {
-            public int x;
-            public int y;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct MINMAXINFO
-        {
-            public POINT ptReserved;
-            public POINT ptMaxSize;
-            public POINT ptMaxPosition;
-            public POINT ptMinTrackSize;
-            public POINT ptMaxTrackSize;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct RECT
-        {
-            public int Left;
-            public int Top;
-            public int Right;
-            public int Bottom;
-        }
-
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-        private struct MONITORINFO
-        {
-            public int cbSize;
-            public RECT rcMonitor;
-            public RECT rcWork;
-            public uint dwFlags;
-        }
-
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
         private static extern bool Shell_NotifyIconW(uint dwMessage, ref NOTIFYICONDATA lpData);
 
@@ -90,28 +54,29 @@ namespace AionToolPro.Desktop.Services
         private static extern bool DestroyIcon(IntPtr hIcon);
 
         [DllImport("user32.dll")]
-        private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
-
-        [DllImport("user32.dll", CharSet = CharSet.Auto)]
-        private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
-
-        [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern uint RegisterWindowMessageW(string lpString);
 
         private readonly Window _window;
         private readonly ContextMenu _contextMenu;
         private readonly Action _onRestoreRequested;
+        private readonly Action? _onDpiOrDisplayChanged;
         private HwndSource? _hwndSource;
         private IntPtr _hwnd;
         private IntPtr _iconHandle;
+        private uint _wmTaskbarCreated;
+        private string _lastTooltip = "AionToolPro";
         private bool _isAdded;
         private bool _disposed;
 
-        public TrayIconManager(Window window, ContextMenu contextMenu, Action onRestoreRequested)
+        public TrayIconManager(Window window, ContextMenu contextMenu, Action onRestoreRequested, Action? onDpiOrDisplayChanged = null)
         {
             _window = window;
             _contextMenu = contextMenu;
             _onRestoreRequested = onRestoreRequested;
+            _onDpiOrDisplayChanged = onDpiOrDisplayChanged;
         }
 
         public void Initialize()
@@ -120,11 +85,13 @@ namespace AionToolPro.Desktop.Services
             _hwnd = helper.Handle;
             if (_hwnd == IntPtr.Zero) return;
 
+            _wmTaskbarCreated = RegisterWindowMessageW("TaskbarCreated");
             _hwndSource = HwndSource.FromHwnd(_hwnd);
             _hwndSource?.AddHook(WndProc);
 
             LoadAppIcon();
-            AddTrayIcon($"AionToolPro {AioNetworkService.GetAppVersionString()}");
+            _lastTooltip = $"AionToolPro {AioNetworkService.GetAppVersionString()}";
+            AddTrayIcon(_lastTooltip);
         }
 
         private void LoadAppIcon()
@@ -170,6 +137,7 @@ namespace AionToolPro.Desktop.Services
 
         public void UpdateTooltip(string tooltip)
         {
+            _lastTooltip = TruncateTip(tooltip);
             if (_disposed || !_isAdded || _hwnd == IntPtr.Zero) return;
 
             var nid = new NOTIFYICONDATA
@@ -178,7 +146,7 @@ namespace AionToolPro.Desktop.Services
                 hWnd = _hwnd,
                 uID = 1001,
                 uFlags = NIF_TIP,
-                szTip = TruncateTip(tooltip)
+                szTip = _lastTooltip
             };
 
             Shell_NotifyIconW(NIM_MODIFY, ref nid);
@@ -192,10 +160,19 @@ namespace AionToolPro.Desktop.Services
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (msg == WM_GETMINMAXINFO)
+            // Automatically recover Tray icon if Windows Explorer restarts
+            if (_wmTaskbarCreated != 0 && (uint)msg == _wmTaskbarCreated)
             {
-                WmGetMinMaxInfo(hwnd, lParam);
-                handled = true;
+                _isAdded = false;
+                AddTrayIcon(_lastTooltip);
+                return IntPtr.Zero;
+            }
+
+            // Re-sync monitor Hz, responsive layout & maximize frame padding when moving across DPI monitors
+            if (msg == WM_DPICHANGED)
+            {
+                if (_onDpiOrDisplayChanged != null)
+                    _window.Dispatcher.InvokeAsync(_onDpiOrDisplayChanged);
                 return IntPtr.Zero;
             }
 
@@ -219,26 +196,6 @@ namespace AionToolPro.Desktop.Services
             }
 
             return IntPtr.Zero;
-        }
-
-        private static void WmGetMinMaxInfo(IntPtr hwnd, IntPtr lParam)
-        {
-            var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
-            IntPtr monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-            if (monitor != IntPtr.Zero)
-            {
-                var monitorInfo = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-                if (GetMonitorInfo(monitor, ref monitorInfo))
-                {
-                    RECT rcWork = monitorInfo.rcWork;
-                    RECT rcMonitor = monitorInfo.rcMonitor;
-                    mmi.ptMaxPosition.x = Math.Abs(rcWork.Left - rcMonitor.Left);
-                    mmi.ptMaxPosition.y = Math.Abs(rcWork.Top - rcMonitor.Top);
-                    mmi.ptMaxSize.x = Math.Abs(rcWork.Right - rcWork.Left);
-                    mmi.ptMaxSize.y = Math.Abs(rcWork.Bottom - rcWork.Top);
-                }
-            }
-            Marshal.StructureToPtr(mmi, lParam, true);
         }
 
         public void Dispose()

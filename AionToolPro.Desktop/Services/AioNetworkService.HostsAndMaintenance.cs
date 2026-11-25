@@ -659,6 +659,14 @@ namespace AionToolPro.Desktop.Services
         }
 
         // ==================== SAFE GAME BOOSTER ====================
+        public bool IsGameBoosterActive()
+        {
+            lock (_ioLock)
+            {
+                return File.Exists(GameBoosterStateFilePath);
+            }
+        }
+
         public async Task<OperationResult> OptimizeForGamingAsync()
         {
             using var lease = CreateTrackedOperationCts(TimeSpan.FromMinutes(2));
@@ -731,8 +739,13 @@ namespace AionToolPro.Desktop.Services
 
             if (servicesToRestore.Count == 0)
             {
-                string msg = "No services were suspended by Game Booster (nothing to restore).";
+                lock (_ioLock)
+                {
+                    try { if (File.Exists(GameBoosterStateFilePath)) File.Delete(GameBoosterStateFilePath); } catch { }
+                }
+                string msg = "Game Booster disabled. System returned to normal mode.";
                 Emit($"[RESTORE MODE] {msg}");
+                WriteActionLog("System", $"OK {msg}");
                 return new OperationResult(true, msg);
             }
 

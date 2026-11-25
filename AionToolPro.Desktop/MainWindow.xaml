@@ -4,16 +4,22 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="AionToolPro"
         Icon="AionToolp.ico"
-        Width="1360" Height="850" MinWidth="1080" MinHeight="700"
+        Width="1280" Height="800" MinWidth="840" MinHeight="560"
         WindowStartupLocation="CenterScreen"
-        WindowStyle="None"
+        WindowStyle="SingleBorderWindow"
         ResizeMode="CanResize"
-        Background="{DynamicResource WindowCanvasBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        RenderOptions.BitmapScalingMode="HighQuality"
+        Background="Transparent"
         Foreground="{DynamicResource PrimaryTextBrush}"
-        FontFamily="Segoe UI">
+        FontFamily="{StaticResource UiFontFamily}"
+        SizeChanged="MainWindow_SizeChanged">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+        <shell:WindowChrome CaptionHeight="44" ResizeBorderThickness="6" GlassFrameThickness="-1" CornerRadius="0" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
     <Window.Triggers>
@@ -28,7 +34,7 @@
         </EventTrigger>
     </Window.Triggers>
 
-    <Border BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1">
+    <Border x:Name="RootWindowBorder" Background="{DynamicResource WindowCanvasBrush}" BorderBrush="{DynamicResource GlassEdgeBrush}" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="44"/>
@@ -36,7 +42,7 @@
             </Grid.RowDefinitions>
 
             <!-- ==================== CUSTOM FRAMELESS TITLE BAR ==================== -->
-            <Border Grid.Row="0" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,0,0,1" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Border Grid.Row="0" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,0,0,1">
                 <Grid Margin="16,0,10,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -56,28 +62,28 @@
 
                     <!-- Center Live Status Summary + Speedometer + Auto Packet Loss (In / Out) -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="12" Padding="11,3" Margin="0,0,6,0">
-                            <TextBlock x:Name="TxtHeaderQuickSummary" Text="1.1.1.1: --  ·  Arvan: --  ·  Router: --" FontSize="10.5" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource AccentBrush}"/>
+                        <Border x:Name="BdHeaderQuickSummary" Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="12" Padding="11,3" Margin="0,0,6,0">
+                            <TextBlock x:Name="TxtHeaderQuickSummary" Text="1.1.1.1: --  ·  Arvan: --  ·  Router: --" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Foreground="{DynamicResource AccentBrush}"/>
                         </Border>
-                        <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="12" Padding="10,3" Margin="0,0,6,0">
+                        <Border x:Name="BdHeaderSpeed" Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="12" Padding="10,3" Margin="0,0,6,0">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" FlowDirection="LeftToRight">
-                                <TextBlock x:Name="TxtSpeedDl" Text="⬇ 0 KB/s" FontSize="10.5" FontFamily="Consolas" Foreground="#10B981" Margin="0,0,8,0"/>
-                                <TextBlock x:Name="TxtSpeedUl" Text="⬆ 0 KB/s" FontSize="10.5" FontFamily="Consolas" Foreground="#F59E0B"/>
+                                <TextBlock x:Name="TxtSpeedDl" Text="⬇ 0 KB/s" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="#10B981" Margin="0,0,8,0"/>
+                                <TextBlock x:Name="TxtSpeedUl" Text="⬆ 0 KB/s" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="#F59E0B"/>
                             </StackPanel>
                         </Border>
-                        <Border x:Name="BdHeaderPacketLoss" Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="12" Padding="10,3" ToolTip="Real-Time Sliding-Window Packet Loss &amp; NIC Hardware Drops">
+                        <Border x:Name="BdHeaderPacketLoss" shell:WindowChrome.IsHitTestVisibleInChrome="True" Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="12" Padding="10,3" ToolTip="Real-Time Sliding-Window Packet Loss &amp; NIC Hardware Drops">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" FlowDirection="LeftToRight">
-                                <TextBlock x:Name="TxtPacketLossIn" Text="Loss: 0.0%" FontSize="10" FontWeight="SemiBold" FontFamily="Consolas" Foreground="#10B981" Margin="0,0,8,0"/>
-                                <TextBlock x:Name="TxtPacketLossOut" Text="NIC: 0d" FontSize="10" FontWeight="SemiBold" FontFamily="Consolas" Foreground="#10B981"/>
+                                <TextBlock x:Name="TxtPacketLossIn" Text="Loss: 0.0%" FontSize="10" FontWeight="SemiBold" FontFamily="{StaticResource MonoFontFamily}" Foreground="#10B981" Margin="0,0,8,0"/>
+                                <TextBlock x:Name="TxtPacketLossOut" Text="NIC: 0d" FontSize="10" FontWeight="SemiBold" FontFamily="{StaticResource MonoFontFamily}" Foreground="#10B981"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
 
                     <!-- Window Chrome Buttons -->
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Content="—" Click="BtnMinimize_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Minimize"/>
-                        <Button Content="▢" Click="BtnMaximize_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Maximize"/>
-                        <Button Content="✕" Click="BtnClose_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Close" Foreground="#F43F5E"/>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <Button x:Name="BtnMinimize" Content="—" Click="BtnMinimize_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Minimize" shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
+                        <Button x:Name="BtnMaximize" Content="▢" Click="BtnMaximize_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Maximize" shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
+                        <Button x:Name="BtnClose" Content="✕" Click="BtnClose_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Close" Foreground="#F43F5E" shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -85,7 +91,7 @@
             <!-- ==================== MAIN WORKSPACE ==================== -->
             <Grid x:Name="MainWorkspaceGrid" Grid.Row="1">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="245"/>
+                    <ColumnDefinition x:Name="SidebarColumn" Width="245"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
@@ -96,10 +102,14 @@
                         <!-- Network Adaptor Selector with Green / Orange / Red Status Dots -->
                         <Border DockPanel.Dock="Top" Background="{DynamicResource CardSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,14">
                             <StackPanel>
-                                <DockPanel Margin="0,0,0,6">
-                                    <TextBlock x:Name="LblNetworkAdaptor" Text="Network Adaptor" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center"/>
-                                    <Button Content="↻" Click="BtnRefreshAdapters_Click" Style="{StaticResource SecondaryBtnStyle}" HorizontalAlignment="Right" Padding="7,2" Margin="0" ToolTip="Scan Adaptors"/>
-                                </DockPanel>
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="LblNetworkAdaptor" Grid.Column="0" Text="Network Adaptor" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,6,0"/>
+                                    <Button Grid.Column="1" Content="↻" Click="BtnRefreshAdapters_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="7,2" Margin="0" ToolTip="Scan Adaptors"/>
+                                </Grid>
                                 <ComboBox x:Name="InterfaceCombo" SelectionChanged="InterfaceCombo_SelectionChanged" Height="34" FlowDirection="LeftToRight">
                                     <ComboBox.ItemTemplate>
                                         <DataTemplate>
@@ -113,23 +123,34 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Clean Navigation without Numbers -->
-                        <StackPanel DockPanel.Dock="Top">
-                            <RadioButton x:Name="NavDashboard" Content="⚡  Dashboard" IsChecked="True" Checked="Nav_Checked" Tag="Dashboard" Style="{StaticResource NavRadioStyle}"/>
-                            <RadioButton x:Name="NavDnsTools" Content="🌐  DNS Studio" Checked="Nav_Checked" Tag="DnsTools" Style="{StaticResource NavRadioStyle}"/>
-                            <RadioButton x:Name="NavNetworkInfo" Content="📡  Network Info" Checked="Nav_Checked" Tag="NetworkInfo" Style="{StaticResource NavRadioStyle}"/>
-                            <RadioButton x:Name="NavWifi" Content="📶  Wi-Fi Manager" Checked="Nav_Checked" Tag="Wifi" Style="{StaticResource NavRadioStyle}"/>
-                            <RadioButton x:Name="NavFixes" Content="🛡️  Fixes &amp; Hosts" Checked="Nav_Checked" Tag="Fixes" Style="{StaticResource NavRadioStyle}"/>
-                            <RadioButton x:Name="NavMaintenance" Content="🔧  Maintenance" Checked="Nav_Checked" Tag="Maintenance" Style="{StaticResource NavRadioStyle}"/>
-                            <RadioButton x:Name="NavSettings" Content="🎨  Settings" Checked="Nav_Checked" Tag="Settings" Style="{StaticResource NavRadioStyle}"/>
-                            <RadioButton x:Name="NavHelp" Content="❓  Help" Checked="Nav_Checked" Tag="Help" Style="{StaticResource NavRadioStyle}"/>
-                        </StackPanel>
+                        <!-- Categorized Modern Navigation -->
+                        <ScrollViewer DockPanel.Dock="Top" VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock x:Name="LblNavCatOverview" Text="OVERVIEW" Style="{StaticResource NavCategoryHeaderStyle}" Margin="8,0,8,3"/>
+                                <RadioButton x:Name="NavDashboard" Content="⚡  Dashboard" IsChecked="True" Checked="Nav_Checked" Tag="Dashboard" Style="{StaticResource NavRadioStyle}"/>
 
-                        <!-- Bottom-Left: Subtle Version Number 0.8.6 -->
-                        <StackPanel DockPanel.Dock="Bottom" Margin="6,0,0,2">
-                            <TextBlock Text="Created By Yoqaizo" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}"/>
-                            <TextBlock x:Name="TxtAppVersion" Text="0.8.6" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,0,0"/>
-                        </StackPanel>
+                                <TextBlock x:Name="LblNavCatNetwork" Text="NETWORK &amp; DNS" Style="{StaticResource NavCategoryHeaderStyle}"/>
+                                <RadioButton x:Name="NavDnsTools" Content="🌐  DNS Studio" Checked="Nav_Checked" Tag="DnsTools" Style="{StaticResource NavRadioStyle}"/>
+                                <RadioButton x:Name="NavNetworkInfo" Content="📡  Network Info" Checked="Nav_Checked" Tag="NetworkInfo" Style="{StaticResource NavRadioStyle}"/>
+                                <RadioButton x:Name="NavWifi" Content="📶  Wi-Fi Manager" Checked="Nav_Checked" Tag="Wifi" Style="{StaticResource NavRadioStyle}"/>
+
+                                <TextBlock x:Name="LblNavCatSystem" Text="SYSTEM &amp; SECURITY" Style="{StaticResource NavCategoryHeaderStyle}"/>
+                                <RadioButton x:Name="NavFixes" Content="🛡️  Fixes &amp; Hosts" Checked="Nav_Checked" Tag="Fixes" Style="{StaticResource NavRadioStyle}"/>
+                                <RadioButton x:Name="NavMaintenance" Content="🔧  Maintenance" Checked="Nav_Checked" Tag="Maintenance" Style="{StaticResource NavRadioStyle}"/>
+
+                                <TextBlock x:Name="LblNavCatApp" Text="PREFERENCES" Style="{StaticResource NavCategoryHeaderStyle}"/>
+                                <RadioButton x:Name="NavSettings" Content="🎨  Settings" Checked="Nav_Checked" Tag="Settings" Style="{StaticResource NavRadioStyle}"/>
+                                <RadioButton x:Name="NavHelp" Content="❓  Help" Checked="Nav_Checked" Tag="Help" Style="{StaticResource NavRadioStyle}"/>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- Bottom-Left: Subtle Version Footer -->
+                        <Border DockPanel.Dock="Bottom" Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,8,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Created By Yoqaizo" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}"/>
+                                <TextBlock x:Name="TxtAppVersion" Text="0.9.0" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource MutedTextBrush}" Margin="0,1,0,0"/>
+                            </StackPanel>
+                        </Border>
                     </DockPanel>
                 </Border>
 
@@ -138,95 +159,137 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="140"/>
+                        <RowDefinition x:Name="ConsoleRow" Height="138"/>
                     </Grid.RowDefinitions>
 
                     <!-- ==================== TOP TELEMETRY STRIP (3 LIVE PINGS + ACTIVE DNS) ==================== -->
-                    <UniformGrid Grid.Row="0" Columns="4" Margin="18,14,8,4">
+                    <UniformGrid x:Name="TelemetryStripGrid" Grid.Row="0" Columns="4" Margin="18,12,8,2">
 
                         <!-- 1. Global Ping: Click to cycle (1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 4.2.2.4) -->
                         <Border x:Name="CardGlobalPing" Style="{StaticResource ClickableTelemetryPingCardStyle}" MouseLeftButtonUp="CardGlobalPing_Click" ToolTip="Click to switch Global ping server (1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 4.2.2.4)">
                             <StackPanel>
-                                <DockPanel>
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Ellipse x:Name="PulseDot1" Width="8" Height="8" Fill="#38BDF8" Margin="0,0,6,0"/>
-                                        <TextBlock x:Name="LblPingCard1" Text="GLOBAL · 1.1.1.1 ↻" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}"/>
-                                    </StackPanel>
-                                    <Border Background="#2238BDF8" CornerRadius="5" Padding="6,1.5" HorizontalAlignment="Right">
+                                <Grid Height="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse x:Name="PulseDot1" Grid.Column="0" Width="8" Height="8" Fill="#38BDF8" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="LblPingCard1" Grid.Column="1" Text="GLOBAL · 1.1.1.1 ↻" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                    <Border Grid.Column="1" Background="#2238BDF8" CornerRadius="5" Padding="6,1.5" VerticalAlignment="Center">
                                         <TextBlock x:Name="TxtBadgeGlobal" Text="LIVE" FontSize="9" FontWeight="Bold" Foreground="#38BDF8"/>
                                     </Border>
-                                </DockPanel>
-                                <DockPanel Margin="0,6,0,5" FlowDirection="LeftToRight">
-                                    <TextBlock x:Name="TxtPingGlobal" Text="-- ms" FontSize="20" FontWeight="Bold" FontFamily="Consolas" Foreground="#38BDF8"/>
-                                    <TextBlock x:Name="TxtJitterGlobal" Text="±0 ms" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
-                                </DockPanel>
-                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,5">
+                                </Grid>
+                                <Grid Height="28" Margin="0,5,0,5" FlowDirection="LeftToRight">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="TxtPingGlobal" Grid.Column="0" Text="-- ms" FontSize="19" FontWeight="Bold" FontFamily="{StaticResource MonoFontFamily}" Foreground="#38BDF8" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="TxtJitterGlobal" Grid.Column="1" Text="±0ms · L:0%" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="6,0,0,3" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,6">
                                     <Border x:Name="BarPingGlobal" HorizontalAlignment="Left" Width="35" CornerRadius="2" Background="#38BDF8"/>
                                 </Grid>
-                                <TextBlock x:Name="TxtStatsGlobal" Text="Min --  Avg --  Max --" FontSize="10.5" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}"/>
+                                <TextBlock x:Name="TxtStatsGlobal" Text="Loss 0% · --/--/-- ms" FontSize="10" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
                         <!-- 2. Intranet Ping: Click to cycle (Arvan / SalatinGames / ParsVDS / Iran.ir) -->
                         <Border x:Name="CardIntranetPing" Style="{StaticResource ClickableTelemetryPingCardStyle}" MouseLeftButtonUp="CardIntranetPing_Click" ToolTip="Click to switch Intranet ping server (arvancloud.ir / salatingames.ir / parsvds.com / iran.ir)">
                             <StackPanel>
-                                <DockPanel>
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Ellipse x:Name="PulseDot2" Width="8" Height="8" Fill="#10B981" Margin="0,0,6,0"/>
-                                        <TextBlock x:Name="LblPingCard2" Text="INTRANET · ARVAN ↻" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}"/>
-                                    </StackPanel>
-                                    <Border Background="#2210B981" CornerRadius="5" Padding="6,1.5" HorizontalAlignment="Right">
+                                <Grid Height="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse x:Name="PulseDot2" Grid.Column="0" Width="8" Height="8" Fill="#10B981" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="LblPingCard2" Grid.Column="1" Text="INTRANET · ARVAN ↻" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                    <Border Grid.Column="1" Background="#2210B981" CornerRadius="5" Padding="6,1.5" VerticalAlignment="Center">
                                         <TextBlock x:Name="TxtBadgeIntranet" Text="LIVE" FontSize="9" FontWeight="Bold" Foreground="#10B981"/>
                                     </Border>
-                                </DockPanel>
-                                <DockPanel Margin="0,6,0,5" FlowDirection="LeftToRight">
-                                    <TextBlock x:Name="TxtPingIntranet" Text="-- ms" FontSize="20" FontWeight="Bold" FontFamily="Consolas" Foreground="#10B981"/>
-                                    <TextBlock x:Name="TxtJitterIntranet" Text="±0 ms" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
-                                </DockPanel>
-                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,5">
+                                </Grid>
+                                <Grid Height="28" Margin="0,5,0,5" FlowDirection="LeftToRight">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="TxtPingIntranet" Grid.Column="0" Text="-- ms" FontSize="19" FontWeight="Bold" FontFamily="{StaticResource MonoFontFamily}" Foreground="#10B981" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="TxtJitterIntranet" Grid.Column="1" Text="±0ms · L:0%" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="6,0,0,3" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,6">
                                     <Border x:Name="BarPingIntranet" HorizontalAlignment="Left" Width="35" CornerRadius="2" Background="#10B981"/>
                                 </Grid>
-                                <TextBlock x:Name="TxtStatsIntranet" Text="Min --  Avg --  Max --" FontSize="10.5" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}"/>
+                                <TextBlock x:Name="TxtStatsIntranet" Text="Loss 0% · --/--/-- ms" FontSize="10" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
                         <!-- 3. PC to Router / Wi-Fi Delay -->
                         <Border Style="{StaticResource TelemetryPingCardStyle}">
                             <StackPanel>
-                                <DockPanel>
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Ellipse x:Name="PulseDot3" Width="8" Height="8" Fill="#F59E0B" Margin="0,0,6,0"/>
-                                        <TextBlock x:Name="TxtRouterCardTitle" Text="PC ↔ ROUTER" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}"/>
-                                    </StackPanel>
-                                    <Border Background="#22F59E0B" CornerRadius="5" Padding="6,1.5" HorizontalAlignment="Right">
+                                <Grid Height="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Ellipse x:Name="PulseDot3" Grid.Column="0" Width="8" Height="8" Fill="#F59E0B" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="TxtRouterCardTitle" Grid.Column="1" Text="PC ↔ ROUTER" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                    <Border Grid.Column="1" Background="#22F59E0B" CornerRadius="5" Padding="6,1.5" VerticalAlignment="Center">
                                         <TextBlock x:Name="TxtBadgeRouter" Text="GATEWAY" FontSize="9" FontWeight="Bold" Foreground="#F59E0B"/>
                                     </Border>
-                                </DockPanel>
-                                <DockPanel Margin="0,6,0,5" FlowDirection="LeftToRight">
-                                    <TextBlock x:Name="TxtPingRouter" Text="-- ms" FontSize="20" FontWeight="Bold" FontFamily="Consolas" Foreground="#F59E0B"/>
-                                    <TextBlock x:Name="TxtJitterRouter" Text="±0 ms" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
-                                </DockPanel>
-                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,5">
+                                </Grid>
+                                <Grid Height="28" Margin="0,5,0,5" FlowDirection="LeftToRight">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="TxtPingRouter" Grid.Column="0" Text="-- ms" FontSize="19" FontWeight="Bold" FontFamily="{StaticResource MonoFontFamily}" Foreground="#F59E0B" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="TxtJitterRouter" Grid.Column="1" Text="±0ms · L:0%" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="6,0,0,3" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,6">
                                     <Border x:Name="BarPingRouter" HorizontalAlignment="Left" Width="35" CornerRadius="2" Background="#F59E0B"/>
                                 </Grid>
-                                <TextBlock x:Name="TxtStatsRouter" Text="Min --  Avg --  Max --" FontSize="10.5" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}"/>
+                                <TextBlock x:Name="TxtStatsRouter" Text="Loss 0% · --/--/-- ms" FontSize="10" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
                         <!-- 4. Active System DNS & Traffic -->
                         <Border Style="{StaticResource TelemetryPingCardStyle}">
                             <StackPanel>
-                                <DockPanel>
-                                    <TextBlock x:Name="LblActiveDnsCard" Text="ACTIVE DNS" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center"/>
-                                    <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="5" Padding="6,1.5" HorizontalAlignment="Right">
+                                <Grid Height="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="LblActiveDnsCard" Grid.Column="0" Text="ACTIVE DNS" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,6,0"/>
+                                    <Border Grid.Column="1" Background="{DynamicResource AccentSoftBrush}" CornerRadius="5" Padding="6,1.5" VerticalAlignment="Center">
                                         <TextBlock x:Name="TxtAdapterState" Text="Connected" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
                                     </Border>
-                                </DockPanel>
-                                <TextBlock x:Name="TxtActiveDns" Text="Detecting..." FontSize="14.5" FontWeight="Bold" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource PrimaryTextBrush}" Margin="0,8,0,6" TextTrimming="CharacterEllipsis"/>
-                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,5">
+                                </Grid>
+                                <Grid Height="28" Margin="0,5,0,5" FlowDirection="LeftToRight">
+                                    <TextBlock x:Name="TxtActiveDns" Text="Detecting..." FontSize="14" FontWeight="Bold" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                                <Grid Height="4" Background="{DynamicResource InputSurfaceBrush}" Margin="0,0,0,6">
                                     <Border HorizontalAlignment="Stretch" CornerRadius="2" Background="{DynamicResource AccentGradientBrush}"/>
                                 </Grid>
-                                <TextBlock x:Name="TxtDataUsage" Text="Rx 0.0 MB  ·  Tx 0.0 MB" FontSize="10.5" FontFamily="Consolas" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}"/>
+                                <TextBlock x:Name="TxtDataUsage" Text="Rx 0.0 MB  ·  Tx 0.0 MB" FontSize="10" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
                     </UniformGrid>
@@ -235,45 +298,56 @@
                     <ScrollViewer Grid.Row="1" Padding="18,10,18,12" VerticalScrollBarVisibility="Auto">
                         <Grid x:Name="WorkspaceAnimatedRoot" RenderTransformOrigin="0.5,0.5">
                             <Grid.RenderTransform>
-                                <TranslateTransform x:Name="WorkspaceSlideTransform" X="0" Y="0"/>
+                                <TransformGroup>
+                                    <ScaleTransform x:Name="WorkspaceScaleTransform" ScaleX="1" ScaleY="1"/>
+                                    <TranslateTransform x:Name="WorkspaceSlideTransform" X="0" Y="0"/>
+                                </TransformGroup>
                             </Grid.RenderTransform>
 
                             <!-- ==================== VIEW: DASHBOARD ==================== -->
                             <StackPanel x:Name="ViewDashboard" Visibility="Visible">
-                                <Border Style="{StaticResource SectionCardStyle}">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource SectionCardStyle}" Padding="16,14">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="LblDashStatusHeader" Grid.Column="0" Text="SYSTEM NETWORK STATUS" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                            <Border x:Name="BdGameBoosterPill" Grid.Column="1" Background="#2210B981" BorderBrush="#10B981" BorderThickness="1" CornerRadius="6" Padding="8,2" VerticalAlignment="Center" Visibility="Collapsed">
+                                                <TextBlock x:Name="TxtGameBoosterPill" Text="GAME MODE ACTIVE" FontSize="9.5" FontWeight="Bold" Foreground="#10B981"/>
+                                            </Border>
+                                        </Grid>
+                                        <TextBlock x:Name="TxtDashboardAdapterSummary"
+                                                   Text="Scanning active Windows adaptor..."
+                                                   FontFamily="{StaticResource MonoFontFamily}" FontSize="12"
+                                                   FlowDirection="LeftToRight"
+                                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                                   Margin="0,6,0,12" TextWrapping="Wrap"/>
 
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                            <TextBlock x:Name="LblDashStatusHeader" Text="SYSTEM NETWORK STATUS" FontSize="13.5" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
-                                            <TextBlock x:Name="TxtDashboardAdapterSummary"
-                                                       Text="Scanning active Windows adaptor..."
-                                                       FontFamily="Consolas" FontSize="12"
-                                                       FlowDirection="LeftToRight"
-                                                       Foreground="{DynamicResource PrimaryTextBrush}"
-                                                       Margin="0,6,12,0" TextWrapping="Wrap"/>
-                                        </StackPanel>
+                                        <Border Height="1" Background="{DynamicResource BorderHairlineBrush}" Margin="0,0,0,12" Opacity="0.7"/>
 
-                                        <WrapPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
-                                            <Button x:Name="BtnGameBooster" Content="🎮 Game Booster" Click="BtnGameBooster_Click" Style="{StaticResource DangerBtnStyle}" Margin="0,0,8,0"/>
-                                            <Button x:Name="BtnRestoreNormalMode" Content="🔄 Restore Normal" Click="BtnRestoreNormalMode_Click" Style="{StaticResource SecondaryBtnStyle}" Margin="0,0,8,0"/>
-                                            <Button x:Name="BtnDashFastestDns" Content="⚡ Fastest DNS" Click="BtnBenchmarkDns_Click" Style="{StaticResource PrimaryBtnStyle}" Margin="0,0,8,0"/>
-                                            <Button x:Name="BtnDashAutoDns" Content="↺ Automatic DNS" Click="BtnResetDnsDhcp_Click" Style="{StaticResource SecondaryBtnStyle}" Margin="0,0,8,0"/>
-                                            <Button x:Name="BtnDashFlushDns" Content="🧹 Flush Cache" Click="BtnFlushDns_Click" Style="{StaticResource SecondaryBtnStyle}" Margin="0"/>
+                                        <!-- Strictly 4 Clean Primary Dashboard Actions -->
+                                        <WrapPanel VerticalAlignment="Center">
+                                            <Button x:Name="BtnGameBooster" Content="🎮 Game Booster" Click="BtnGameBooster_Click" Style="{StaticResource SuccessBtnStyle}" Padding="16,8" Margin="0,0,10,4"/>
+                                            <Button x:Name="BtnDashFastestDns" Content="⚡ Fastest DNS" Click="BtnBenchmarkDns_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="16,8" Margin="0,0,10,4"/>
+                                            <Button x:Name="BtnDashResetDns" Content="↺ Reset DNS" Click="BtnResetDnsDhcp_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="16,8" Margin="0,0,10,4" ToolTip="Reset DNS to automatic DHCP and clear DNS cache"/>
+                                            <Button x:Name="BtnDashResetAdapter" Content="🔄 Reset Adaptor" Click="BtnFullAdapterReset_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="16,8" Margin="0,0,0,4" ToolTip="Full network adaptor reset and IP renew"/>
                                         </WrapPanel>
-                                    </Grid>
+                                    </StackPanel>
                                 </Border>
 
-                                <Border Style="{StaticResource SectionCardStyle}">
+                                <Border Style="{StaticResource SectionCardStyle}" Padding="16,14">
                                     <StackPanel>
-                                        <DockPanel Margin="0,0,0,10">
-                                                <TextBlock x:Name="LblDashQuickDnsTitle" Text="QUICK DNS SWITCHER" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center"/>
-                                                <TextBox x:Name="TxtSearchDns" Width="210" Height="30" HorizontalAlignment="Right" FlowDirection="LeftToRight" TextChanged="TxtSearchDns_TextChanged" ToolTip="Search DNS by name or IP..."/>
-                                            </DockPanel>
-                                        <WrapPanel x:Name="DashboardDnsWrapPanel" />
+                                        <Grid Margin="0,0,0,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="LblDashQuickDnsTitle" Grid.Column="0" Text="QUICK DNS SWITCHER" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
+                                            <TextBox x:Name="TxtSearchDns" Grid.Column="1" Width="220" Height="32" FlowDirection="LeftToRight" TextChanged="TxtSearchDns_TextChanged" ToolTip="Search DNS by name or IP..."/>
+                                        </Grid>
+                                        <StackPanel x:Name="DashboardDnsContainer"/>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -284,15 +358,15 @@
                                     <StackPanel>
                                         <TextBlock x:Name="LblDnsConfigTitle" Text="DNS Configurator" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
                                         <WrapPanel VerticalAlignment="Center" Margin="0,0,0,10">
-                                            <ComboBox x:Name="ComboDnsProviders" Width="350" Height="34" FlowDirection="LeftToRight" Margin="0,0,10,8"/>
+                                            <ComboBox x:Name="ComboDnsProviders" Width="300" Height="34" FlowDirection="LeftToRight" Margin="0,0,10,8"/>
                                             <Button x:Name="BtnApplySelectedDns" Content="Apply Selected DNS" Click="BtnApplySelectedDns_Click" Style="{StaticResource PrimaryBtnStyle}"/>
                                         </WrapPanel>
                                         <TextBlock x:Name="LblCustomDnsTitle" Text="Custom IPv4 DNS" FontSize="12" FontWeight="Bold" Margin="0,2,0,6"/>
                                         <WrapPanel VerticalAlignment="Center">
                                             <TextBlock x:Name="LblPrimaryDns" Text="Primary:" VerticalAlignment="Center" Margin="0,0,8,8"/>
-                                            <TextBox x:Name="TxtCustomDns1" Width="150" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="1.1.1.1" Margin="0,0,14,8"/>
+                                            <TextBox x:Name="TxtCustomDns1" Width="150" Height="34" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Text="1.1.1.1" Margin="0,0,14,8"/>
                                             <TextBlock x:Name="LblSecondaryDns" Text="Secondary:" VerticalAlignment="Center" Margin="0,0,8,8"/>
-                                            <TextBox x:Name="TxtCustomDns2" Width="150" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="1.0.0.1" Margin="0,0,14,8"/>
+                                            <TextBox x:Name="TxtCustomDns2" Width="150" Height="34" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Text="1.0.0.1" Margin="0,0,14,8"/>
                                             <TextBlock x:Name="LblCustomDnsName" Text="Name:" VerticalAlignment="Center" Margin="0,0,6,8"/>
                                                 <TextBox x:Name="TxtCustomDnsName" Width="130" Height="34" FlowDirection="LeftToRight" Text="My DNS" Margin="0,0,10,8"/>
                                                 <Button x:Name="BtnApplyCustomDns" Content="Apply Custom DNS" Click="BtnApplyCustomDns_Click" Style="{StaticResource PrimaryBtnStyle}"/>
@@ -367,7 +441,7 @@
                                         <TextBlock x:Name="LblPingPortTitle" Text="Ping Monitor, Traceroute &amp; Port Scanner" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
                                         <WrapPanel VerticalAlignment="Center" Margin="0,0,0,6">
                                             <TextBlock x:Name="LblTargetHost" Text="Host:" VerticalAlignment="Center" Margin="0,0,8,8"/>
-                                            <TextBox x:Name="TxtNetTargetHost" Width="190" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="" Margin="0,0,12,8"/>
+                                            <TextBox x:Name="TxtNetTargetHost" Width="190" Height="34" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Text="" Margin="0,0,12,8"/>
                                             <TextBlock x:Name="LblPackets" Text="Packets:" VerticalAlignment="Center" Margin="0,0,8,8"/>
                                             <ComboBox x:Name="ComboPingPackets" Width="85" Height="34" FlowDirection="LeftToRight" SelectedIndex="0" Margin="0,0,12,8">
                                                 <ComboBoxItem Content="20"/>
@@ -378,19 +452,23 @@
                                             <Button x:Name="BtnPingMonitor" Content="Ping Monitor" Click="BtnPingMonitor_Click" Style="{StaticResource PrimaryBtnStyle}"/>
                                             <Button x:Name="BtnTraceroute" Content="Traceroute" Click="BtnTraceroute_Click" Style="{StaticResource SecondaryBtnStyle}"/>
                                             <TextBlock x:Name="LblPort" Text="Port:" VerticalAlignment="Center" Margin="8,0,6,8"/>
-                                            <TextBox x:Name="TxtPortNumber" Width="85" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="443" Margin="0,0,10,8"/>
+                                            <TextBox x:Name="TxtPortNumber" Width="85" Height="34" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Text="443" Margin="0,0,10,8"/>
                                             <Button x:Name="BtnPortCheck" Content="Check Port" Click="BtnPortCheck_Click" Style="{StaticResource PrimaryBtnStyle}"/>
                                         </WrapPanel>
-                                        <TextBox x:Name="TxtNetInfoReport" IsReadOnly="True" FontFamily="Consolas" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="180" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                                        <TextBox x:Name="TxtNetInfoReport" IsReadOnly="True" FontFamily="{StaticResource MonoFontFamily}" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="180" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
                                     </StackPanel>
                                 </Border>
 
                                 <Border Style="{StaticResource SectionCardStyle}">
                                     <StackPanel>
-                                        <DockPanel Margin="0,0,0,10">
-                                                <TextBlock x:Name="LblAppNetMonitorTitle" Text="Active Connections by App (IPv4/IPv6)" FontSize="15" FontWeight="Bold" VerticalAlignment="Center"/>
-                                                <TextBox x:Name="TxtSearchAppNet" Width="210" Height="30" HorizontalAlignment="Right" FlowDirection="LeftToRight" TextChanged="TxtSearchAppNet_TextChanged" ToolTip="Filter by process name, PID, or IP..."/>
-                                            </DockPanel>
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="LblAppNetMonitorTitle" Grid.Column="0" Text="Active Connections by App (IPv4/IPv6)" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
+                                            <TextBox x:Name="TxtSearchAppNet" Grid.Column="1" Width="220" Height="32" FlowDirection="LeftToRight" TextChanged="TxtSearchAppNet_TextChanged" ToolTip="Filter by process name, PID, or IP..."/>
+                                        </Grid>
                                         <WrapPanel>
                                             <Button x:Name="BtnRefreshAppNet" Content="🔄 Scan Active Apps" Click="BtnRefreshAppNet_Click" Style="{StaticResource PrimaryBtnStyle}"/>
                                             <Button x:Name="BtnAutoAppNet" Content="⏱️ Auto-Refresh: OFF" Click="BtnAutoAppNet_Click" Style="{StaticResource SecondaryBtnStyle}"/>
@@ -432,7 +510,7 @@
                                                 <DataGridTextColumn Header="Security Status" Binding="{Binding Status}" Width="*"/>
                                             </DataGrid.Columns>
                                         </DataGrid>
-                                        <TextBox x:Name="TxtWifiDetails" IsReadOnly="True" FontFamily="Consolas" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="160" VerticalScrollBarVisibility="Auto"/>
+                                        <TextBox x:Name="TxtWifiDetails" IsReadOnly="True" FontFamily="{StaticResource MonoFontFamily}" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="160" VerticalScrollBarVisibility="Auto"/>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -444,11 +522,11 @@
                                         <TextBlock x:Name="LblStaticIpTitle" Text="Static IPv4 &amp; DHCP" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
                                         <WrapPanel VerticalAlignment="Center">
                                             <TextBlock Text="IPv4:" VerticalAlignment="Center" Margin="0,0,6,8"/>
-                                            <TextBox x:Name="TxtStaticIp" Width="135" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="192.168.1.50" Margin="0,0,12,8"/>
+                                            <TextBox x:Name="TxtStaticIp" Width="135" Height="34" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Text="192.168.1.50" Margin="0,0,12,8"/>
                                             <TextBlock Text="Mask:" VerticalAlignment="Center" Margin="0,0,6,8"/>
-                                            <TextBox x:Name="TxtStaticMask" Width="135" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="255.255.255.0" Margin="0,0,12,8"/>
+                                            <TextBox x:Name="TxtStaticMask" Width="135" Height="34" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Text="255.255.255.0" Margin="0,0,12,8"/>
                                             <TextBlock Text="Gateway:" VerticalAlignment="Center" Margin="0,0,6,8"/>
-                                            <TextBox x:Name="TxtStaticGateway" Width="135" Height="34" FontFamily="Consolas" FlowDirection="LeftToRight" Text="192.168.1.1" Margin="0,0,14,8"/>
+                                            <TextBox x:Name="TxtStaticGateway" Width="135" Height="34" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Text="192.168.1.1" Margin="0,0,14,8"/>
                                             <Button x:Name="BtnApplyStaticIp" Content="Apply Static IP" Click="BtnApplyStaticIp_Click" Style="{StaticResource PrimaryBtnStyle}"/>
                                             <Button x:Name="BtnSwitchIpDhcp" Content="Automatic DHCP" Click="BtnSwitchIpDhcp_Click" Style="{StaticResource SecondaryBtnStyle}"/>
                                         </WrapPanel>
@@ -466,11 +544,11 @@
                                             <Button x:Name="BtnHostsResetDefault" Content="Reset Default" Click="BtnHostsResetDefault_Click" Style="{StaticResource DangerBtnStyle}"/>
                                         </WrapPanel>
                                         <WrapPanel VerticalAlignment="Center" Margin="0,6,0,0">
-                                            <ComboBox x:Name="ComboBlocklists" Width="360" Height="34" FlowDirection="LeftToRight" Margin="0,0,10,8"/>
+                                            <ComboBox x:Name="ComboBlocklists" Width="300" Height="34" FlowDirection="LeftToRight" Margin="0,0,10,8"/>
                                             <Button x:Name="BtnApplyBlocklist" Content="➕ Apply Blocklist" Click="BtnApplyBlocklist_Click" Style="{StaticResource PrimaryBtnStyle}"/>
                                             <Button x:Name="BtnRemoveBlocklist" Content="➖ Remove Blocklist" Click="BtnRemoveBlocklist_Click" Style="{StaticResource DangerBtnStyle}"/>
                                         </WrapPanel>
-                                        <TextBox x:Name="TxtHostsPreview" IsReadOnly="True" FontFamily="Consolas" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="150" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0"/>
+                                        <TextBox x:Name="TxtHostsPreview" IsReadOnly="True" FontFamily="{StaticResource MonoFontFamily}" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="150" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0"/>
                                     </StackPanel>
                                 </Border>
 
@@ -512,19 +590,20 @@
 
                             <!-- ==================== VIEW: SETTINGS (COMPACT & MODERN) ==================== -->
                             <StackPanel x:Name="ViewSettings" Visibility="Collapsed">
-                                <!-- Card 1: Appearance, Language & Behavior -->
+                                <!-- Card 1: Appearance, Glass Studio & Display Calibration -->
                                 <Border Style="{StaticResource SectionCardStyle}" Padding="16,14">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,10">
-                                            <TextBlock x:Name="LblThemeStudioTitle" Text="Appearance &amp; Preferences" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center"/>
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                            <TextBlock x:Name="LblThemeStudioTitle" Text="Appearance &amp; Visual Studio" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <WrapPanel HorizontalAlignment="Right" VerticalAlignment="Center">
                                                 <TextBlock x:Name="LblLanguageSelect" Text="Language:" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                                <ComboBox x:Name="ComboLanguage" Width="118" Height="30" SelectionChanged="ComboLanguage_SelectionChanged" Margin="0,0,14,0">
+                                                <ComboBox x:Name="ComboLanguage" Width="114" Height="30" SelectionChanged="ComboLanguage_SelectionChanged" Margin="0,0,14,0">
                                                     <ComboBoxItem Content="English" Tag="en"/>
                                                     <ComboBoxItem Content="فارسی" Tag="fa"/>
                                                 </ComboBox>
-                                                <CheckBox x:Name="ChkDarkMode" Content="Dark Mode" IsChecked="True" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Checked="ChkDarkMode_Changed" Unchecked="ChkDarkMode_Changed"/>
-                                            </StackPanel>
+                                                <CheckBox x:Name="ChkDarkMode" Content="Dark Mode" IsChecked="True" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" Checked="ChkDarkMode_Changed" Unchecked="ChkDarkMode_Changed"/>
+                                                <CheckBox x:Name="ChkGlassMode" Content="Glass Mode" IsChecked="False" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" Checked="ChkGlassMode_Changed" Unchecked="ChkGlassMode_Changed"/>
+                                            </WrapPanel>
                                         </DockPanel>
 
                                         <TextBlock x:Name="LblThemeSelect" Text="Accent Theme" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,6"/>
@@ -532,6 +611,52 @@
 
                                         <TextBlock x:Name="LblAppBgPaletteTitle" Text="Background Surface" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,6"/>
                                         <WrapPanel x:Name="SurfaceSwatchesWrapPanel" Margin="0,0,0,10"/>
+
+                                        <!-- Glass Transparency, Brightness & Contrast Calibration Sliders -->
+                                        <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14,10" Margin="0,0,0,10">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock x:Name="LblVisualCalibrationTitle" Grid.Column="0" Text="Display Calibration (Transparency, Brightness &amp; Contrast)" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,10,0"/>
+                                                    <Button x:Name="BtnResetVisuals" Grid.Column="1" Content="↺ Reset Visuals" Click="BtnResetVisuals_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="10,4" FontSize="11" Margin="0"/>
+                                                </Grid>
+
+                                                <UniformGrid x:Name="VisualSlidersGrid" Columns="3">
+                                                    <!-- Transparency Slider -->
+                                                    <StackPanel Margin="0,0,12,0">
+                                                        <Grid Margin="0,0,0,3">
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock x:Name="LblTransparencySlider" Grid.Column="0" Text="Transparency" FontSize="11.5" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock x:Name="TxtTransparencyValue" Grid.Column="1" Text="100%" FontSize="11.5" FontWeight="Bold" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                                        </Grid>
+                                                        <Slider x:Name="SliderTransparency" Minimum="35" Maximum="100" Value="100" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="VisualSlider_ValueChanged" FlowDirection="LeftToRight"/>
+                                                    </StackPanel>
+
+                                                    <!-- Brightness Slider -->
+                                                    <StackPanel Margin="6,0,6,0">
+                                                        <Grid Margin="0,0,0,3">
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock x:Name="LblBrightnessSlider" Grid.Column="0" Text="Brightness" FontSize="11.5" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock x:Name="TxtBrightnessValue" Grid.Column="1" Text="100%" FontSize="11.5" FontWeight="Bold" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                                        </Grid>
+                                                        <Slider x:Name="SliderBrightness" Minimum="75" Maximum="130" Value="100" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="VisualSlider_ValueChanged" FlowDirection="LeftToRight"/>
+                                                    </StackPanel>
+
+                                                    <!-- Contrast Slider -->
+                                                    <StackPanel Margin="12,0,0,0">
+                                                        <Grid Margin="0,0,0,3">
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock x:Name="LblContrastSlider" Grid.Column="0" Text="Contrast" FontSize="11.5" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock x:Name="TxtContrastValue" Grid.Column="1" Text="100%" FontSize="11.5" FontWeight="Bold" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                                        </Grid>
+                                                        <Slider x:Name="SliderContrast" Minimum="80" Maximum="135" Value="100" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="VisualSlider_ValueChanged" FlowDirection="LeftToRight"/>
+                                                    </StackPanel>
+                                                </UniformGrid>
+                                            </StackPanel>
+                                        </Border>
 
                                         <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8">
                                             <WrapPanel VerticalAlignment="Center">
@@ -555,18 +680,18 @@
                                                 <Button x:Name="BtnImportSettings" Content="📥 Import" Click="BtnImportSettings_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="11,6" Margin="0"/>
                                             </WrapPanel>
                                         </DockPanel>
-                                        <ProgressBar x:Name="ProgressUpdate" Height="6" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed" Margin="0,0,0,10" Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource InputSurfaceBrush}" BorderThickness="0"/>
 
                                         <Border Height="1" Background="{DynamicResource BorderHairlineBrush}" Margin="0,4,0,10"/>
 
-                                        <DockPanel Margin="0,0,0,6">
-                                            <TextBlock x:Name="LblActionLogTitle" Text="Action Log" FontSize="13.5" FontWeight="Bold" VerticalAlignment="Center"/>
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Grid Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="LblActionLogTitle" Grid.Column="0" Text="Action Log" FontSize="13.5" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
                                                 <Button x:Name="BtnViewLog" Content="Refresh" Click="BtnViewLog_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="10,4" Margin="0,0,6,0"/>
                                                 <Button x:Name="BtnClearLog" Content="Clear" Click="BtnClearLog_Click" Style="{StaticResource DangerBtnStyle}" Padding="10,4" Margin="0"/>
                                             </StackPanel>
-                                        </DockPanel>
-                                        <TextBox x:Name="TxtActionLogContent" IsReadOnly="True" FontFamily="Consolas" FontSize="11.5" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="165" VerticalScrollBarVisibility="Auto"/>
+                                        </Grid>
+                                        <TextBox x:Name="TxtActionLogContent" IsReadOnly="True" FontFamily="{StaticResource MonoFontFamily}" FontSize="11.5" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="165" VerticalScrollBarVisibility="Auto"/>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -578,7 +703,7 @@
                                         <TextBlock x:Name="LblHelpTitle" Text="AionToolPro — Complete Feature &amp; Button Guide" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
                                         <TextBlock x:Name="LblHelpSubtitle" Text="Visual reference explaining every indicator, button, and tool inside AionToolPro." FontSize="12" Foreground="{DynamicResource MutedTextBrush}" Margin="0,3,0,14"/>
 
-                                        <UniformGrid Columns="2">
+                                        <UniformGrid x:Name="HelpCardsGrid" Columns="2">
                                             <!-- Card 1 -->
                                             <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="4,0,4,10">
                                                 <StackPanel>
@@ -650,11 +775,181 @@
                                     <Button x:Name="BtnClearConsole" Content="Clear" Click="BtnClearConsole_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="10,2" Margin="0"/>
                                 </StackPanel>
                             </DockPanel>
-                            <TextBox x:Name="ConsoleOutputBox" IsReadOnly="True" FontFamily="Consolas" FontSize="11.5" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Background="{DynamicResource InputSurfaceBrush}" Foreground="{DynamicResource PrimaryTextBrush}" BorderThickness="1" BorderBrush="{DynamicResource BorderHairlineBrush}" Padding="8,5" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
+                            <TextBox x:Name="ConsoleOutputBox" IsReadOnly="True" FontFamily="{StaticResource MonoFontFamily}" FontSize="11.5" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Background="{DynamicResource InputSurfaceBrush}" Foreground="{DynamicResource PrimaryTextBrush}" BorderThickness="1" BorderBrush="{DynamicResource BorderHairlineBrush}" Padding="8,5" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
                         </DockPanel>
                     </Border>
                 </Grid>
             </Grid>
+
+            <!-- ==================== GRAPHICAL SOFTWARE UPDATE CENTER MODAL ==================== -->
+            <Border x:Name="UpdateModalOverlay"
+                    Grid.Row="0" Grid.RowSpan="2"
+                    Background="#B8060911"
+                    Visibility="Collapsed"
+                    Panel.ZIndex="99">
+                <Border x:Name="UpdateModalCard"
+                        Width="500"
+                        MaxWidth="520"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="{DynamicResource CardSurfaceBrush}"
+                        BorderBrush="{DynamicResource AccentBrush}"
+                        BorderThickness="1.5"
+                        CornerRadius="16"
+                        Padding="22,20"
+                        RenderTransformOrigin="0.5,0.5"
+                        Effect="{StaticResource CardShadowEffect}">
+                    <Border.RenderTransform>
+                        <ScaleTransform x:Name="UpdateModalScaleTransform" ScaleX="1" ScaleY="1"/>
+                    </Border.RenderTransform>
+
+                    <StackPanel>
+                        <!-- Modal Header -->
+                        <DockPanel Margin="0,0,0,14">
+                            <Border x:Name="BdUpdateIconCircle"
+                                    Width="44" Height="44"
+                                    CornerRadius="22"
+                                    Background="{DynamicResource AccentSoftBrush}"
+                                    BorderBrush="{DynamicResource AccentBrush}"
+                                    BorderThickness="1.5"
+                                    Margin="0,0,12,0"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="TxtUpdateIcon" Text="🔄" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+
+                            <Button x:Name="BtnUpdateModalCloseTop"
+                                    DockPanel.Dock="Right"
+                                    Content="✕"
+                                    Click="BtnUpdateClose_Click"
+                                    Style="{StaticResource WindowChromeBtnStyle}"
+                                    Width="32" Height="32"
+                                    VerticalAlignment="Top"
+                                    ToolTip="Close"/>
+
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
+                                <TextBlock x:Name="TxtUpdateTitle" Text="Software Update" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource PrimaryTextBrush}"/>
+                                <TextBlock x:Name="TxtUpdateSubtitle" Text="Checking GitHub Releases..." FontSize="12" Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </DockPanel>
+
+                        <!-- Version Comparison & Security Strip -->
+                        <Border x:Name="BdUpdateVersionStrip"
+                                Background="{DynamicResource InputSurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderHairlineBrush}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="12,9"
+                                Margin="0,0,0,12"
+                                Visibility="Collapsed">
+                            <DockPanel>
+                                <TextBlock x:Name="TxtUpdateVersionFlow"
+                                           Text="v0.9.0  →  v0.9.1"
+                                           FontFamily="{StaticResource MonoFontFamily}"
+                                           FontSize="13"
+                                           FontWeight="Bold"
+                                           FlowDirection="LeftToRight"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           VerticalAlignment="Center"/>
+                                <Border x:Name="BdUpdateVerifyBadge"
+                                        Background="#2210B981"
+                                        BorderBrush="#10B981"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="8,2"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center">
+                                    <TextBlock x:Name="TxtUpdateVerifyText" Text="🔒 HTTPS + SHA-256" FontSize="10" FontWeight="Bold" Foreground="#10B981"/>
+                                </Border>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Graphical Progress Panel (Checking / Downloading / Verifying) -->
+                        <Border x:Name="PanelUpdateProgress"
+                                Background="{DynamicResource InputSurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderHairlineBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="14,12"
+                                Margin="0,0,0,12"
+                                Visibility="Visible">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="TxtUpdateStage" Grid.Column="0" Text="Connecting to GitHub..." FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Bottom" TextTrimming="CharacterEllipsis" Margin="0,0,10,2"/>
+                                    <TextBlock x:Name="TxtUpdatePercent" Grid.Column="1" Text="0%" FontFamily="{StaticResource MonoFontFamily}" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Bottom" FlowDirection="LeftToRight"/>
+                                </Grid>
+
+                                <ProgressBar x:Name="BarUpdateProgress"
+                                             Style="{StaticResource ModernProgressBarStyle}"
+                                             Minimum="0" Maximum="100" Value="0"
+                                             IsIndeterminate="True"
+                                             FlowDirection="LeftToRight"/>
+
+                                <TextBlock x:Name="TxtUpdateTransferStats"
+                                           Text="Preparing secure TLS 1.3 connection..."
+                                           FontFamily="{StaticResource MonoFontFamily}"
+                                           FontSize="11"
+                                           FlowDirection="LeftToRight"
+                                           Foreground="{DynamicResource MutedTextBrush}"
+                                           Margin="0,7,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Graphical Status Banner (Up-To-Date / Cancelled / Error / Installing) -->
+                        <Border x:Name="BdUpdateStatusBanner"
+                                Background="#2210B981"
+                                BorderBrush="#10B981"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="13,10"
+                                Margin="0,0,0,12"
+                                Visibility="Collapsed">
+                            <TextBlock x:Name="TxtUpdateStatusBanner"
+                                       Text=""
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       TextWrapping="Wrap"
+                                       LineHeight="19"/>
+                        </Border>
+
+                        <!-- Scrollable Release Notes / Error Details Box -->
+                        <Border x:Name="BdUpdateNotesBox"
+                                Background="{DynamicResource InputSurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderHairlineBrush}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="10,8"
+                                Margin="0,0,0,14"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock x:Name="LblUpdateNotesHeader" Text="Release Notes" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,5"/>
+                                <TextBox x:Name="TxtUpdateNotes"
+                                         IsReadOnly="True"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         BorderThickness="0"
+                                         Background="Transparent"
+                                         FontFamily="{StaticResource UiFontFamily}"
+                                         FontSize="11.5"
+                                         FlowDirection="LeftToRight"
+                                         VerticalContentAlignment="Top"
+                                         Height="120"
+                                         Padding="0"
+                                         VerticalScrollBarVisibility="Auto"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Modal Footer Buttons -->
+                        <WrapPanel HorizontalAlignment="Right" Margin="0,2,0,0">
+                            <Button x:Name="BtnUpdateStartDownload" Content="⬇ Download &amp; Install" Click="BtnUpdateStartDownload_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="16,8" Margin="0,0,8,0" Visibility="Collapsed"/>
+                            <Button x:Name="BtnUpdateRetry" Content="🔄 Retry" Click="BtnUpdateRetry_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="16,8" Margin="0,0,8,0" Visibility="Collapsed"/>
+                            <Button x:Name="BtnUpdateCancel" Content="⏹ Cancel" Click="BtnUpdateCancel_Click" Style="{StaticResource DangerBtnStyle}" Padding="16,8" Margin="0,0,8,0" Visibility="Collapsed"/>
+                            <Button x:Name="BtnUpdateClose" Content="Close" Click="BtnUpdateClose_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="16,8" Margin="0" Visibility="Collapsed"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+            </Border>
         </Grid>
     </Border>
 </Window>

@@ -112,7 +112,7 @@ namespace AionToolPro.Desktop.Services
                         c.Name,
                         c.PrimaryIp,
                         string.IsNullOrWhiteSpace(c.SecondaryIp) ? c.PrimaryIp : c.SecondaryIp,
-                        DnsGroupColor.OrangeAntiFilter,
+                        DnsGroupColor.PurpleCustom,
                         string.IsNullOrWhiteSpace(c.Description) ? "Saved custom DNS profile" : c.Description));
                 }
                 _allProvidersCache = all;

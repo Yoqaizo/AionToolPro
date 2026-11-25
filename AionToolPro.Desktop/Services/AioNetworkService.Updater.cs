@@ -86,7 +86,7 @@ namespace AionToolPro.Desktop.Services
             {
                 var rawCurrent = Assembly.GetExecutingAssembly().GetName().Version;
                 if (rawCurrent == null)
-                    return new UpdateCheckResult(false, fallbackVer, fallbackVer, "", null, null, null, "Failed to read local assembly version.");
+                    return new UpdateCheckResult(false, fallbackVer, fallbackVer, "", null, null, null, "Failed to read local assembly version.", IsError: true);
 
                 var currentVer = NormalizeVersion3(rawCurrent);
 
@@ -95,10 +95,10 @@ namespace AionToolPro.Desktop.Services
 
                 using var response = await SharedHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
                 if (!IsTrustedGitHubUri(response.RequestMessage?.RequestUri))
-                    return new UpdateCheckResult(false, currentVer.ToString(), currentVer.ToString(), "", null, null, null, "Blocked: GitHub API redirected to an untrusted host.");
+                    return new UpdateCheckResult(false, currentVer.ToString(), currentVer.ToString(), "", null, null, null, "Blocked: GitHub API redirected to an untrusted host.", IsError: true);
 
                 if (!response.IsSuccessStatusCode)
-                    return new UpdateCheckResult(false, currentVer.ToString(), currentVer.ToString(), "", null, null, null, $"Could not check updates (HTTP {(int)response.StatusCode}).");
+                    return new UpdateCheckResult(false, currentVer.ToString(), currentVer.ToString(), "", null, null, null, $"Could not check updates (HTTP {(int)response.StatusCode}).", IsError: true);
 
                 string json = await response.Content.ReadAsStringAsync(token).ConfigureAwait(false);
                 using var doc = JsonDocument.Parse(json);
@@ -109,14 +109,14 @@ namespace AionToolPro.Desktop.Services
                 string notes = root.TryGetProperty("body", out var bodyEl) ? bodyEl.GetString() ?? "" : "";
 
                 if (!Version.TryParse(cleanTag, out Version? parsedLatest) || parsedLatest == null)
-                    return new UpdateCheckResult(false, currentVer.ToString(), latestTag, "", null, null, null, $"Failed to parse GitHub release version tag ('{latestTag}').");
+                    return new UpdateCheckResult(false, currentVer.ToString(), latestTag, "", null, null, null, $"Failed to parse GitHub release version tag ('{latestTag}').", IsError: true);
 
                 var latestVer = NormalizeVersion3(parsedLatest);
                 if (latestVer <= currentVer)
                 {
-                    string upToDate = $"You are already on the latest version (v{currentVer}).";
+                    string upToDate = $"You are already running the latest version (v{currentVer}).";
                     Emit($"[UPDATER] {upToDate}");
-                    return new UpdateCheckResult(false, currentVer.ToString(), latestVer.ToString(), notes, null, null, null, upToDate);
+                    return new UpdateCheckResult(false, currentVer.ToString(), latestVer.ToString(), notes, null, null, null, upToDate, IsError: false, IsCancelled: false);
                 }
 
                 string? downloadUrl = null;
@@ -146,36 +146,37 @@ namespace AionToolPro.Desktop.Services
 
                 if (string.IsNullOrWhiteSpace(downloadUrl))
                     return new UpdateCheckResult(false, currentVer.ToString(), latestVer.ToString(), notes, null, null, null,
-                        $"New version v{latestVer} exists on GitHub, but no .exe installer is attached to the release yet.");
+                        $"Version v{latestVer} exists on GitHub, but no .exe installer asset is attached yet.", IsError: true);
 
                 return new UpdateCheckResult(true, currentVer.ToString(), latestVer.ToString(), notes, downloadUrl, checksumUrl, assetNameFound,
-                    $"New version v{latestVer} is available (current: v{currentVer}).");
+                    $"New version v{latestVer} is available (current: v{currentVer}).", IsError: false, IsCancelled: false);
             }
             catch (OperationCanceledException)
             {
-                return new UpdateCheckResult(false, fallbackVer, fallbackVer, "", null, null, null, "Update check was cancelled.");
+                return new UpdateCheckResult(false, fallbackVer, fallbackVer, "", null, null, null, "Update check was cancelled.", IsError: false, IsCancelled: true);
             }
             catch (Exception ex)
             {
-                return new UpdateCheckResult(false, fallbackVer, fallbackVer, "", null, null, null, $"Update check error: {ex.Message}");
+                return new UpdateCheckResult(false, fallbackVer, fallbackVer, "", null, null, null, $"Connection or API error: {ex.Message}", IsError: true, IsCancelled: false);
             }
         }
 
-        public async Task<string> DownloadAndInstallUpdateAsync(
+        public async Task<UpdateInstallResult> DownloadAndInstallUpdateAsync(
             UpdateCheckResult update,
-            IProgress<int>? progress,
+            IProgress<UpdateDownloadProgress>? progress,
             CancellationToken token)
         {
             if (!update.HasUpdate || string.IsNullOrWhiteSpace(update.DownloadUrl))
-                return update.Message;
+                return new UpdateInstallResult("ERROR", update.Message);
 
             if (!IsTrustedGitHubUrl(update.DownloadUrl, out var dlUri) || dlUri == null)
-                return "Blocked update: download URL is not from GitHub HTTPS.";
+                return new UpdateInstallResult("ERROR", "Blocked update: download URL is not from GitHub HTTPS.");
 
             string stagedInstallerPath = string.Empty;
 
             try
             {
+                progress?.Report(new UpdateDownloadProgress(0, 0, -1, 0, "PREPARING"));
                 string lockedDir = await PrepareLockedUpdatesDirectoryAsync(token).ConfigureAwait(false);
                 stagedInstallerPath = Path.Combine(lockedDir, $"AionToolPro_Update_{update.LatestVersion}_{Guid.NewGuid():N}.exe");
 
@@ -183,7 +184,7 @@ namespace AionToolPro.Desktop.Services
                 using (var dlResp = await SharedHttp.GetAsync(dlUri, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false))
                 {
                     if (!IsTrustedGitHubUri(dlResp.RequestMessage?.RequestUri))
-                        return "Blocked update: download redirected to an untrusted host.";
+                        return new UpdateInstallResult("ERROR", "Blocked update: download redirected to an untrusted host.");
 
                     dlResp.EnsureSuccessStatusCode();
                     long totalBytes = dlResp.Content.Headers.ContentLength ?? -1;
@@ -193,22 +194,27 @@ namespace AionToolPro.Desktop.Services
                     byte[] buffer = new byte[81920];
                     long readTotal = 0;
                     int lastPct = -1;
+                    var sw = Stopwatch.StartNew();
+                    long lastReportMs = -200;
                     int read;
 
                     while ((read = await src.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) > 0)
                     {
                         await dst.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
                         readTotal += read;
-                        if (totalBytes > 0)
+
+                        int pct = totalBytes > 0 ? (int)Math.Clamp(readTotal * 100L / totalBytes, 0, 100) : 0;
+                        long elapsedMs = sw.ElapsedMilliseconds;
+                        if (pct != lastPct || elapsedMs - lastReportMs >= 120)
                         {
-                            int pct = (int)Math.Clamp(readTotal * 100L / totalBytes, 0, 100);
-                            if (pct != lastPct)
-                            {
-                                lastPct = pct;
-                                progress?.Report(pct);
-                            }
+                            lastPct = pct;
+                            lastReportMs = elapsedMs;
+                            double speed = elapsedMs > 50 ? (readTotal * 1000.0 / elapsedMs) : 0.0;
+                            progress?.Report(new UpdateDownloadProgress(pct, readTotal, totalBytes, speed, "DOWNLOADING"));
                         }
                     }
+
+                    progress?.Report(new UpdateDownloadProgress(100, readTotal, totalBytes > 0 ? totalBytes : readTotal, 0, "VERIFYING"));
                 }
 
                 // Verify Windows MZ PE header
@@ -218,7 +224,7 @@ namespace AionToolPro.Desktop.Services
                     if (fs.Length < 1024 || await fs.ReadAsync(magic.AsMemory(0, 2), token).ConfigureAwait(false) < 2 || magic[0] != 0x4D || magic[1] != 0x5A)
                     {
                         try { File.Delete(stagedInstallerPath); } catch { }
-                        return "Security Error: Downloaded file is not a valid Windows PE executable (missing MZ header).";
+                        return new UpdateInstallResult("ERROR", "Security Error: Downloaded file is not a valid Windows PE executable (missing MZ header).");
                     }
                 }
 
@@ -230,7 +236,7 @@ namespace AionToolPro.Desktop.Services
                     if (!IsTrustedGitHubUri(csResp.RequestMessage?.RequestUri))
                     {
                         try { File.Delete(stagedInstallerPath); } catch { }
-                        return "Blocked update: checksum URL redirected to an untrusted host.";
+                        return new UpdateInstallResult("ERROR", "Blocked update: checksum URL redirected to an untrusted host.");
                     }
                     csResp.EnsureSuccessStatusCode();
                     string checksumText = await csResp.Content.ReadAsStringAsync(token).ConfigureAwait(false);
@@ -248,11 +254,12 @@ namespace AionToolPro.Desktop.Services
                         try { File.Delete(stagedInstallerPath); } catch { }
                         string mismatch = $"Security Error: SHA-256 mismatch! Expected {expectedHash[..12]}..., got {actualHash[..12]}.... Update aborted.";
                         Emit($"[UPDATER ERR] {mismatch}");
-                        return mismatch;
+                        return new UpdateInstallResult("ERROR", mismatch);
                     }
                     Emit("[UPDATER] PE header and SHA-256 checksum verified OK.");
                 }
 
+                progress?.Report(new UpdateDownloadProgress(100, 0, 0, 0, "INSTALLING"));
                 Emit("[UPDATER] Verification passed. Launching silent installer handoff...");
                 CancelCurrentOperation();
 
@@ -270,19 +277,21 @@ namespace AionToolPro.Desktop.Services
                     CreateNoWindow = true
                 });
 
-                return "READY_TO_UPDATE";
+                return new UpdateInstallResult("READY_TO_UPDATE", "Launching silent installer...");
             }
             catch (OperationCanceledException)
             {
                 if (!string.IsNullOrEmpty(stagedInstallerPath))
                     try { if (File.Exists(stagedInstallerPath)) File.Delete(stagedInstallerPath); } catch { }
-                return "Update download was cancelled.";
+                Emit("[UPDATER] Update download cancelled by user; temporary installer removed.");
+                return new UpdateInstallResult("CANCELLED", "Update download was cancelled cleanly and temporary files were removed.");
             }
             catch (Exception ex)
             {
                 if (!string.IsNullOrEmpty(stagedInstallerPath))
                     try { if (File.Exists(stagedInstallerPath)) File.Delete(stagedInstallerPath); } catch { }
-                return $"Update error: {ex.Message}";
+                Emit($"[UPDATER ERR] {ex.Message}");
+                return new UpdateInstallResult("ERROR", $"Update failed: {ex.Message}");
             }
         }
 

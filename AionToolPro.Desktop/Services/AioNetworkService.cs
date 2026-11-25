@@ -67,7 +67,7 @@ namespace AionToolPro.Desktop.Services
         public static string GetAppVersionString()
         {
             var v = Assembly.GetExecutingAssembly().GetName().Version;
-            if (v == null) return "0.8.6";
+            if (v == null) return "0.9.0";
             return $"{Math.Max(0, v.Major)}.{Math.Max(0, v.Minor)}.{Math.Max(0, v.Build)}";
         }
 
@@ -588,7 +588,7 @@ namespace AionToolPro.Desktop.Services
         }
 
         // ==================== SETTINGS, EXPORT/IMPORT & ACTION LOG ====================
-        public void SaveSettings(int themeId, string interfaceName, bool isDarkMode, string languageCode, int surfacePaletteId = 0, bool minimizeToTray = false, string globalPingTarget = "1.1.1.1", string intranetPingTarget = "www.arvancloud.ir")
+        public void SaveSettings(int themeId, string interfaceName, bool isDarkMode, string languageCode, int surfacePaletteId = 0, bool minimizeToTray = false, string globalPingTarget = "1.1.1.1", string intranetPingTarget = "www.arvancloud.ir", bool glassMode = false, int transparencyPercent = 100, double brightnessLevel = 1.0, double contrastLevel = 1.0)
         {
             lock (_ioLock)
             {
@@ -604,7 +604,7 @@ namespace AionToolPro.Desktop.Services
                     Directory.CreateDirectory(_cfgDir);
                     string safeGlobal = ValidateHostOrIp(globalPingTarget) ? globalPingTarget.Trim() : "1.1.1.1";
                     string safeIntranet = ValidateHostOrIp(intranetPingTarget) ? intranetPingTarget.Trim() : "www.arvancloud.ir";
-                    var model = new AppSettingsModel(themeId, interfaceName, EnableActionLog, isDarkMode, languageCode, surfacePaletteId, minimizeToTray, safeGlobal, safeIntranet);
+                    var model = new AppSettingsModel(themeId, interfaceName, EnableActionLog, isDarkMode, languageCode, surfacePaletteId, minimizeToTray, safeGlobal, safeIntranet, glassMode, Math.Clamp(transparencyPercent, 35, 100), Math.Clamp(brightnessLevel, 0.75, 1.30), Math.Clamp(contrastLevel, 0.80, 1.35));
                     string tmp = ConfigFilePath + ".tmp";
                     File.WriteAllText(tmp, JsonSerializer.Serialize(model, JsonOpts), new UTF8Encoding(false));
                     if (File.Exists(ConfigFilePath))
@@ -644,7 +644,7 @@ namespace AionToolPro.Desktop.Services
                             else if (k.Equals("dark", StringComparison.OrdinalIgnoreCase)) dark = v != "0";
                             else if (k.Equals("lang", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(v)) lang = v;
                         }
-                        return new AppSettingsModel(theme, iface, log, dark, lang, surface, false, "1.1.1.1", "www.arvancloud.ir");
+                        return new AppSettingsModel(theme, iface, log, dark, lang, surface, false, "1.1.1.1", "www.arvancloud.ir", false, 100, 1.0, 1.0);
                     }
                 }
                 catch { }

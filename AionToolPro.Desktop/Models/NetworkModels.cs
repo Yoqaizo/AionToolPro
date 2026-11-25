@@ -7,7 +7,7 @@ using System.Windows.Media;
 
 namespace AionToolPro.Desktop.Models
 {
-    public enum DnsGroupColor { OrangeAntiFilter, BlueGeneral, YellowSecurity }
+    public enum DnsGroupColor { OrangeAntiFilter, BlueGeneral, YellowSecurity, PurpleCustom }
 
     public enum AdaptorHealthState
     {
@@ -67,6 +67,7 @@ namespace AionToolPro.Desktop.Models
         {
             DnsGroupColor.OrangeAntiFilter => "IRAN / GAME",
             DnsGroupColor.YellowSecurity => "SECURITY",
+            DnsGroupColor.PurpleCustom => "CUSTOM",
             _ => "GLOBAL"
         };
 
@@ -74,6 +75,7 @@ namespace AionToolPro.Desktop.Models
         {
             DnsGroupColor.OrangeAntiFilter => "#FB923C",
             DnsGroupColor.YellowSecurity => "#FACC15",
+            DnsGroupColor.PurpleCustom => "#A855F7",
             _ => "#38BDF8"
         };
 
@@ -92,7 +94,8 @@ namespace AionToolPro.Desktop.Models
         string CardHoverHex = "#1F2637",
         string InputHex = "#0D111A",
         string BorderHex = "#263044",
-        bool IsLightSurface = false)
+        bool IsLightSurface = false,
+        bool PreferGlassMode = false)
     {
         public override string ToString() => $"{Name} — {Subtitle}";
     }
@@ -107,7 +110,8 @@ namespace AionToolPro.Desktop.Models
         string InputHex,
         string BorderHex,
         bool UseThemeDefault = false,
-        bool IsLightSurface = false)
+        bool IsLightSurface = false,
+        bool EnableGlass = false)
     {
         public override string ToString() => Name;
     }
@@ -186,7 +190,11 @@ namespace AionToolPro.Desktop.Models
         int SurfacePaletteId = 0,
         bool MinimizeToTray = false,
         string GlobalPingTarget = "1.1.1.1",
-        string IntranetPingTarget = "www.arvancloud.ir");
+        string IntranetPingTarget = "www.arvancloud.ir",
+        bool GlassMode = false,
+        int TransparencyPercent = 100,
+        double BrightnessLevel = 1.0,
+        double ContrastLevel = 1.0);
 
     public sealed record CustomDnsProfile(
         string Name,
@@ -206,6 +214,19 @@ namespace AionToolPro.Desktop.Models
         string? DownloadUrl,
         string? ChecksumUrl,
         string? AssetName,
+        string Message,
+        bool IsError = false,
+        bool IsCancelled = false);
+
+    public sealed record UpdateDownloadProgress(
+        int Percent,
+        long BytesReceived,
+        long TotalBytes,
+        double BytesPerSecond,
+        string StageCode);
+
+    public sealed record UpdateInstallResult(
+        string StatusCode,
         string Message);
 
     public sealed record AdapterTelemetrySnapshot(
@@ -415,30 +436,33 @@ namespace AionToolPro.Desktop.Models
 
         public static IReadOnlyList<DnsProviderModel> DnsProviders { get; } = new List<DnsProviderModel>
         {
-            new(1,  "Shecan",        "178.22.122.100", "185.51.200.2",   DnsGroupColor.OrangeAntiFilter, "Iran anti-sanction smart DNS"),
-            new(2,  "Electro",       "78.157.42.100",  "78.157.42.101",  DnsGroupColor.OrangeAntiFilter, "Low-jitter gaming & anti-sanction DNS"),
-            new(3,  "Radar Game",    "10.202.10.10",   "10.202.10.11",   DnsGroupColor.OrangeAntiFilter, "Iran ISP-routed gaming DNS (private range)"),
-            new(4,  "403 Online",    "10.202.10.202",  "10.202.10.102",  DnsGroupColor.OrangeAntiFilter, "Developer sanction bypass (private range)"),
-            new(5,  "Begzar",        "185.55.226.26",  "185.55.225.25",  DnsGroupColor.OrangeAntiFilter, "Anti-sanction web & app resolver"),
-            new(6,  "Shelter",       "91.92.255.16",   "91.92.255.24",   DnsGroupColor.OrangeAntiFilter, "Iran gaming & download stabilizer"),
-            new(7,  "Shatel",        "85.15.1.14",     "85.15.1.15",     DnsGroupColor.OrangeAntiFilter, "Shatel domestic fast DNS resolver"),
-            new(8,  "HostIran",      "172.29.2.100",   "172.29.0.100",   DnsGroupColor.OrangeAntiFilter, "HostIran internal DNS (private range)"),
+            // Group 1: Iran Anti-Sanction & Gaming (1..8)
+            new(1,  "Shecan",        "178.22.122.100", "185.51.200.2",    DnsGroupColor.OrangeAntiFilter, "Iran anti-sanction smart DNS"),
+            new(2,  "Electro",       "78.157.42.100",  "78.157.42.101",   DnsGroupColor.OrangeAntiFilter, "Low-jitter gaming & anti-sanction DNS"),
+            new(3,  "Radar Game",    "10.202.10.10",   "10.202.10.11",    DnsGroupColor.OrangeAntiFilter, "Iran ISP-routed gaming DNS"),
+            new(4,  "403 Online",    "10.202.10.202",  "10.202.10.102",   DnsGroupColor.OrangeAntiFilter, "Developer sanction bypass DNS"),
+            new(5,  "Begzar",        "185.55.226.26",  "185.55.225.25",   DnsGroupColor.OrangeAntiFilter, "Anti-sanction web & app resolver"),
+            new(6,  "Shelter",       "91.92.255.16",   "91.92.255.24",    DnsGroupColor.OrangeAntiFilter, "Iran gaming & download stabilizer"),
+            new(7,  "Shatel",        "85.15.1.14",     "85.15.1.15",      DnsGroupColor.OrangeAntiFilter, "Shatel domestic fast DNS resolver"),
+            new(8,  "HostIran",      "172.29.2.100",   "172.29.0.100",    DnsGroupColor.OrangeAntiFilter, "HostIran internal fast resolver"),
 
-            new(9,  "Cloudflare",    "1.1.1.1",        "1.0.0.1",        DnsGroupColor.BlueGeneral,    "Ultra-fast global edge DNS", "https://cloudflare-dns.com/dns-query", "2606:4700:4700::1111", "2606:4700:4700::1001"),
-            new(10, "Google",        "8.8.8.8",        "8.8.4.4",        DnsGroupColor.BlueGeneral,    "Global high-availability public DNS", "https://dns.google/dns-query", "2001:4860:4860::8888", "2001:4860:4860::8844"),
-            new(11, "Quad9",         "9.9.9.9",        "149.112.112.112",DnsGroupColor.YellowSecurity, "Swiss malware & threat blocking DNS", "https://dns.quad9.net/dns-query", "2620:fe::fe", "2620:fe::9"),
-            new(12, "AdGuard",       "94.140.14.14",   "94.140.15.15",   DnsGroupColor.YellowSecurity, "Network-level ad & tracker blocker", "https://dns.adguard-dns.com/dns-query", "2a10:50c0::ad1:ff", "2a10:50c0::ad2:ff"),
-            new(13, "OpenDNS",       "208.67.222.222", "208.67.220.220", DnsGroupColor.BlueGeneral,    "Cisco enterprise recursive DNS", "https://doh.opendns.com/dns-query"),
-            new(14, "ControlD",      "76.76.2.0",      "76.76.10.0",     DnsGroupColor.BlueGeneral,    "Unfiltered modern anycast resolver", "https://freedns.controld.com/p0"),
-            new(15, "CleanBrowsing", "185.228.168.9",  "185.228.169.9",  DnsGroupColor.YellowSecurity, "Security filter blocking malicious hosts"),
-            new(16, "Yandex",        "77.88.8.8",      "77.88.8.1",      DnsGroupColor.BlueGeneral,    "Fast regional Eurasia recursive DNS"),
+            // Group 2: Global Fast Public DNS (9..16)
+            new(9,  "Cloudflare",    "1.1.1.1",        "1.0.0.1",         DnsGroupColor.BlueGeneral,      "Ultra-fast global edge DNS", "https://cloudflare-dns.com/dns-query", "2606:4700:4700::1111", "2606:4700:4700::1001"),
+            new(10, "Google",        "8.8.8.8",        "8.8.4.4",         DnsGroupColor.BlueGeneral,      "Global high-availability public DNS", "https://dns.google/dns-query", "2001:4860:4860::8888", "2001:4860:4860::8844"),
+            new(11, "OpenDNS",       "208.67.222.222", "208.67.220.220",  DnsGroupColor.BlueGeneral,      "Cisco enterprise recursive DNS", "https://doh.opendns.com/dns-query"),
+            new(12, "ControlD",      "76.76.2.0",      "76.76.10.0",      DnsGroupColor.BlueGeneral,      "Unfiltered modern anycast resolver", "https://freedns.controld.com/p0"),
+            new(13, "Mullvad DNS",   "194.242.2.2",    "194.242.2.3",     DnsGroupColor.BlueGeneral,      "Privacy-first non-logging resolver", "https://dns.mullvad.net/dns-query"),
+            new(14, "Yandex",        "77.88.8.8",      "77.88.8.1",       DnsGroupColor.BlueGeneral,      "Fast Eurasia recursive DNS"),
+            new(15, "AliDNS",        "223.5.5.5",      "223.6.6.6",       DnsGroupColor.BlueGeneral,      "Alibaba Cloud global resolution"),
+            new(16, "114DNS",        "114.114.114.114","114.114.115.115", DnsGroupColor.BlueGeneral,      "Reliable Asian & Pacific routing"),
 
-            new(17, "Comodo Secure", "8.26.56.26",     "8.20.247.20",    DnsGroupColor.YellowSecurity, "Cloud-based web filtering and malware protection"),
-            new(18, "Alternate DNS", "76.76.19.19",    "76.223.122.150", DnsGroupColor.YellowSecurity, "Ad-blocking and tracker filtering"),
-            new(19, "dns0.eu",       "193.110.81.0",   "185.253.5.0",    DnsGroupColor.YellowSecurity, "European sovereign privacy & security DNS", "https://dns0.eu/"),
-            new(20, "Mullvad DNS",   "194.242.2.2",    "194.242.2.3",    DnsGroupColor.BlueGeneral,    "Privacy-first non-logging resolver by Mullvad", "https://dns.mullvad.net/dns-query"),
-            new(21, "AliDNS",        "223.5.5.5",      "223.6.6.6",      DnsGroupColor.BlueGeneral,    "Alibaba Cloud global resolution"),
-            new(22, "114DNS",        "114.114.114.114","114.114.115.115",DnsGroupColor.BlueGeneral,    "Reliable Asian & Pacific routing")
+            // Group 3: Security, Privacy & Ad-Blocking DNS (17..22)
+            new(17, "Quad9",         "9.9.9.9",        "149.112.112.112", DnsGroupColor.YellowSecurity,   "Swiss malware & threat blocker", "https://dns.quad9.net/dns-query", "2620:fe::fe", "2620:fe::9"),
+            new(18, "AdGuard",       "94.140.14.14",   "94.140.15.15",    DnsGroupColor.YellowSecurity,   "Network-level ad & tracker blocker", "https://dns.adguard-dns.com/dns-query", "2a10:50c0::ad1:ff", "2a10:50c0::ad2:ff"),
+            new(19, "CleanBrowsing", "185.228.168.9",  "185.228.169.9",   DnsGroupColor.YellowSecurity,   "Security filter blocking threats"),
+            new(20, "dns0.eu",       "193.110.81.0",   "185.253.5.0",     DnsGroupColor.YellowSecurity,   "European privacy & security DNS", "https://dns0.eu/"),
+            new(21, "Alternate DNS", "76.76.19.19",    "76.223.122.150",  DnsGroupColor.YellowSecurity,   "Ad-blocking & tracker filtering"),
+            new(22, "Comodo Secure", "8.26.56.26",     "8.20.247.20",     DnsGroupColor.YellowSecurity,   "Cloud malware & web protection")
         };
 
         public static IReadOnlyList<ThemeDefinition> Themes { get; } = new List<ThemeDefinition>
@@ -452,7 +476,9 @@ namespace AionToolPro.Desktop.Models
             new(7,  "Solar Amber Gold",     "#F59E0B", "#FBBF24", "Industrial Gold Hardware Analyzer",  "#130E05", "#1C1508", "#271E0C", "#332811", "#161106", "#423316"),
             new(8,  "Deep Ocean Aqua",      "#06B6D4", "#2DD4BF", "Crisp Cyan-Teal Engineering",        "#051216", "#081C22", "#0E2730", "#143440", "#06151A", "#1B4352"),
             new(9,  "Titanium Stealth",     "#E2E8F0", "#94A3B8", "Minimalist Monochrome Slate",        "#090B0E", "#101318", "#171B22", "#20252E", "#0C0E12", "#2B323D"),
-            new(10, "Daylight Clean Light", "#4F46E5", "#0284C7", "High-Contrast Light Surface",        "#F1F5F9", "#FFFFFF", "#FFFFFF", "#F8FAFC", "#F8FAFC", "#CBD5E1", IsLightSurface: true)
+            new(10, "Daylight Clean Light", "#4F46E5", "#0284C7", "High-Contrast Light Surface",        "#F1F5F9", "#FFFFFF", "#FFFFFF", "#F8FAFC", "#F8FAFC", "#CBD5E1", IsLightSurface: true),
+            new(11, "Frost Cyber Glass",    "#38BDF8", "#A855F7", "Translucent Frosted Glass & Neon",   "#0A101E", "#10182B", "#16213A", "#1F2E4F", "#0D1526", "#2E446E", PreferGlassMode: true),
+            new(12, "Aurora Prism Glass",   "#2DD4BF", "#818CF8", "Luminous Teal-Indigo Acrylic Glass", "#071318", "#0C1D24", "#122933", "#193845", "#091820", "#265063", PreferGlassMode: true)
         };
 
         public static IReadOnlyList<AppSurfacePalette> SurfacePalettes { get; } = new List<AppSurfacePalette>
@@ -465,7 +491,8 @@ namespace AionToolPro.Desktop.Models
             new(5, "Matrix Forest Dark",         "#05100C", "#081913", "#0E261D", "#143529", "#06140F", "#1C4737"),
             new(6, "Crimson Carbon Dark",        "#120609", "#1B0A0E", "#260F15", "#33141D", "#15070B", "#421B26"),
             new(7, "Slate Graphite",             "#12151B", "#181C24", "#202631", "#29303E", "#14181F", "#343D4E"),
-            new(8, "Clean Daylight White",       "#F1F5F9", "#FFFFFF", "#FFFFFF", "#F8FAFC", "#F8FAFC", "#CBD5E1", IsLightSurface: true)
+            new(8, "Clean Daylight White",       "#F1F5F9", "#FFFFFF", "#FFFFFF", "#F8FAFC", "#F8FAFC", "#CBD5E1", IsLightSurface: true),
+            new(9, "Frosted Acrylic Glass",      "#0B111E", "#10182A", "#162036", "#1F2C48", "#0D1424", "#2D3F63", EnableGlass: true)
         };
 
         public static IReadOnlyList<BlocklistDefinition> Blocklists { get; } = new List<BlocklistDefinition>

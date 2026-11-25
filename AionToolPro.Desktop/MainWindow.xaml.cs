@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -25,6 +26,7 @@ namespace AionToolPro.Desktop
         private readonly DispatcherTimer _nicTimer = new() { Interval = TimeSpan.FromSeconds(1.0) };
         private readonly DispatcherTimer _pingTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
         private readonly DispatcherTimer _consoleFlushTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
+        private readonly DispatcherTimer _settingsSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(320) };
         private readonly ConcurrentQueue<string> _consoleQueue = new();
         private readonly NetworkAddressChangedEventHandler _networkAddressChangedHandler;
         private CancellationTokenSource? _networkChangeDebounceCts;
@@ -54,6 +56,11 @@ namespace AionToolPro.Desktop
         private string _currentLang = "en";
         private ThemeDefinition _currentTheme = AioCatalog.Themes[0];
         private AppSurfacePalette _currentSurface = AioCatalog.SurfacePalettes[0];
+        private bool _glassMode;
+        private int _transparencyPercent = 100;
+        private double _brightnessLevel = 1.0;
+        private double _contrastLevel = 1.0;
+        private bool _suppressVisualSliders;
         private DnsBenchmarkRow? _fastestWinner;
         private List<AppNetworkUsageRow> _allAppRows = new();
 
@@ -64,6 +71,10 @@ namespace AionToolPro.Desktop
         private bool _isPingRunning;
         private bool _pingRescanRequested;
         private bool _autoRefreshAppMonitor;
+        private bool _isGameBoosterActive;
+        private bool _isUpdateBusy;
+        private CancellationTokenSource? _updateCts;
+        private UpdateCheckResult? _pendingUpdateInfo;
         private int _pingTickCounter;
 
         private long _lastRxBytes;
@@ -82,6 +93,7 @@ namespace AionToolPro.Desktop
         private readonly Dictionary<string, (Border Pill, TextBlock PillText)> _dnsCardBadges = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<int, Button> _themeSwatchButtons = new();
         private readonly Dictionary<int, Button> _surfaceSwatchButtons = new();
+        private readonly List<UniformGrid> _dnsCategoryGrids = new();
 
         private static Color ParseColor(string hex) => ColorConverter.ConvertFromString(hex) is Color c ? c : Colors.White;
 
@@ -92,6 +104,9 @@ namespace AionToolPro.Desktop
         private static readonly SolidColorBrush FrozenAmber = Freeze(new SolidColorBrush(AmberColor));
         private static readonly SolidColorBrush FrozenRed = Freeze(new SolidColorBrush(RedColor));
         private static readonly SolidColorBrush FrozenActivePillBg = Freeze(new SolidColorBrush(Color.FromArgb(55, GreenColor.R, GreenColor.G, GreenColor.B)));
+        private static readonly SolidColorBrush FrozenAmberBg = Freeze(new SolidColorBrush(Color.FromArgb(42, AmberColor.R, AmberColor.G, AmberColor.B)));
+        private static readonly SolidColorBrush FrozenRedBg = Freeze(new SolidColorBrush(Color.FromArgb(42, RedColor.R, RedColor.G, RedColor.B)));
+        private static readonly SolidColorBrush FrozenGreenBg = Freeze(new SolidColorBrush(Color.FromArgb(42, GreenColor.R, GreenColor.G, GreenColor.B)));
 
         private static SolidColorBrush Freeze(SolidColorBrush b)
         {
@@ -117,6 +132,13 @@ namespace AionToolPro.Desktop
             _consoleFlushTimer.Tick += (_, _) => FlushConsoleQueue();
             _consoleFlushTimer.Start();
 
+            _settingsSaveTimer.Tick += (_, _) =>
+            {
+                _settingsSaveTimer.Stop();
+                if (_isInitialized && !_isClosing)
+                    SaveCurrentSettings();
+            };
+
             _networkAddressChangedHandler = (_, _) =>
             {
                 if (_isClosing) return;
@@ -133,8 +155,159 @@ namespace AionToolPro.Desktop
         protected override void OnSourceInitialized(EventArgs e)
         {
             base.OnSourceInitialized(e);
-            _trayManager = new TrayIconManager(this, BuildTrayContextMenu(), RestoreFromTray);
+            EnsureWindowFitsCurrentWorkArea();
+            _trayManager = new TrayIconManager(this, BuildTrayContextMenu(), RestoreFromTray, OnDpiOrDisplayChanged);
             _trayManager.Initialize();
+            ApplyWindowMaximizeBounds();
+            ApplyVisualState(animateTheme: false, forceBackdropRefresh: true);
+        }
+
+        private void EnsureWindowFitsCurrentWorkArea()
+        {
+            try
+            {
+                var wa = SystemParameters.WorkArea;
+                if (wa.Width <= 0 || wa.Height <= 0) return;
+
+                if (WindowState == WindowState.Normal)
+                {
+                    double maxW = Math.Max(MinWidth, wa.Width * 0.94);
+                    double maxH = Math.Max(MinHeight, wa.Height * 0.94);
+                    if (Width > maxW) Width = maxW;
+                    if (Height > maxH) Height = maxH;
+
+                    if (Left < wa.Left || Left + Width > wa.Right)
+                        Left = wa.Left + Math.Max(0, (wa.Width - Width) / 2.0);
+                    if (Top < wa.Top || Top + Height > wa.Bottom)
+                        Top = wa.Top + Math.Max(0, (wa.Height - Height) / 2.0);
+                }
+            }
+            catch { }
+        }
+
+        private void OnDpiOrDisplayChanged()
+        {
+            if (_isClosing) return;
+            ApplyWindowMaximizeBounds();
+            ApplyResponsiveLayout();
+            ApplyVisualState(animateTheme: false, forceBackdropRefresh: true);
+        }
+
+        private void ApplyWindowMaximizeBounds()
+        {
+            if (WindowState == WindowState.Maximized)
+            {
+                // Compensate Win32 SingleBorderWindow offscreen sizing frame cleanly at any DPI (100%-200%)
+                RootWindowBorder.Padding = VisualBackdropService.GetMaximizedFrameThickness(this);
+                RootWindowBorder.BorderThickness = new Thickness(0);
+                if (BtnMaximize != null)
+                {
+                    BtnMaximize.Content = "❐";
+                    BtnMaximize.ToolTip = _currentLang == "fa" ? "بازگردانی پنجره" : "Restore";
+                }
+            }
+            else
+            {
+                RootWindowBorder.Padding = new Thickness(0);
+                RootWindowBorder.BorderThickness = new Thickness(1);
+                if (BtnMaximize != null)
+                {
+                    BtnMaximize.Content = "▢";
+                    BtnMaximize.ToolTip = _currentLang == "fa" ? "بزرگ‌نمایی" : "Maximize";
+                }
+            }
+        }
+
+        private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            ApplyResponsiveLayout();
+        }
+
+        private void ApplyResponsiveLayout()
+        {
+            if (_isClosing) return;
+            double w = ActualWidth > 0 ? ActualWidth : Width;
+            double h = ActualHeight > 0 ? ActualHeight : Height;
+
+            // Adaptive sidebar width across wide, medium, and compact (840px) windows
+            SidebarColumn.Width = w < 980 ? new GridLength(196) : w < 1160 ? new GridLength(214) : new GridLength(245);
+
+            // Adaptive telemetry ping cards: 4 columns on wide screens, 2x2 grid on compact windows
+            TelemetryStripGrid.Columns = w < 1140 ? 2 : 4;
+
+            // Adaptive header pills so chrome buttons never crowd or clip
+            BdHeaderQuickSummary.Visibility = w < 1180 ? Visibility.Collapsed : Visibility.Visible;
+            BdHeaderSpeed.Visibility = w < 940 ? Visibility.Collapsed : Visibility.Visible;
+
+            // Adaptive Help grid & Visual calibration sliders
+            HelpCardsGrid.Columns = w < 1040 ? 1 : 2;
+            VisualSlidersGrid.Columns = w < 980 ? 1 : 3;
+
+            // Adaptive console strip height on shorter screens (e.g. 1366x768 or 1080p @ 150% DPI)
+            ConsoleRow.Height = h < 700 ? new GridLength(96) : h < 760 ? new GridLength(114) : new GridLength(138);
+
+            // Adaptive DNS Quick Switcher grid columns (4 -> 3 -> 2) for razor-even rows at every window width
+            int dnsCols = GetDnsGridColumns();
+            foreach (var g in _dnsCategoryGrids)
+            {
+                if (g.Columns != dnsCols)
+                    g.Columns = dnsCols;
+            }
+        }
+
+        private int GetDnsGridColumns()
+        {
+            double w = ActualWidth > 0 ? ActualWidth : Width;
+            if (w < 980) return 2;
+            if (w < 1260) return 3;
+            return 4;
+        }
+
+        private void ScheduleDebouncedSettingsSave()
+        {
+            _settingsSaveTimer.Stop();
+            _settingsSaveTimer.Start();
+        }
+
+        private void ApplyVisualState(bool animateTheme = true, bool forceBackdropRefresh = false)
+        {
+            bool effectiveGlass = _glassMode || _currentSurface.EnableGlass;
+            bool useFrostedAlpha = effectiveGlass && VisualBackdropService.IsWindowsTransparencyEnabled();
+
+            var (isDarkSurface, solidCanvasColor) = ThemeManager.ApplyTheme(
+                _currentTheme,
+                ChkDarkMode.IsChecked == true,
+                _currentSurface.Id,
+                useFrostedAlpha,
+                _transparencyPercent,
+                _brightnessLevel,
+                _contrastLevel,
+                animate: animateTheme);
+
+            // Always keep Window.Background transparent so DWM Acrylic blur never gets blocked by an opaque outer shell;
+            // RootWindowBorder paints 100% opaque canvas in Solid Mode and low-alpha frost in Glass Mode.
+            Background = Brushes.Transparent;
+
+            VisualBackdropService.ApplyWindowEffects(
+                this,
+                effectiveGlass,
+                isDarkSurface,
+                _transparencyPercent,
+                solidCanvasColor,
+                forceRefresh: forceBackdropRefresh);
+
+            UpdateSwatchSelectionHighlights();
+            UpdateVisualSliderLabels();
+        }
+
+        private void UpdateVisualSliderLabels()
+        {
+            if (TxtTransparencyValue != null)
+                TxtTransparencyValue.Text = $"{_transparencyPercent}%";
+            if (TxtBrightnessValue != null)
+                TxtBrightnessValue.Text = $"{(int)Math.Round(_brightnessLevel * 100)}%";
+            if (TxtContrastValue != null)
+                TxtContrastValue.Text = $"{(int)Math.Round(_contrastLevel * 100)}%";
         }
 
         private ContextMenu BuildTrayContextMenu()
@@ -188,9 +361,16 @@ namespace AionToolPro.Desktop
 
         private void MainWindow_StateChanged(object? sender, EventArgs e)
         {
-            if (_isInitialized && WindowState == WindowState.Minimized && ChkMinimizeToTray.IsChecked == true)
+            if (_isInitialized)
             {
-                Hide();
+                if (WindowState == WindowState.Minimized && ChkMinimizeToTray.IsChecked == true)
+                {
+                    Hide();
+                    return;
+                }
+                ApplyWindowMaximizeBounds();
+                ApplyVisualState();
+                ApplyResponsiveLayout();
             }
         }
 
@@ -216,11 +396,13 @@ namespace AionToolPro.Desktop
 
                 bool autoStartOn = await _service.IsStartWithWindowsEnabledAsync();
                 ChkStartWithWindows.IsChecked = autoStartOn;
+                _isGameBoosterActive = _service.IsGameBoosterActive();
 
                 TxtAppVersion.Text = AioNetworkService.GetAppVersionString();
                 _isInitialized = true;
-                ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
+                ApplyVisualState(animateTheme: false, forceBackdropRefresh: true);
                 ApplyLanguage(_currentLang);
+                ApplyResponsiveLayout();
 
                 _nicTimer.Start();
                 _pingTimer.Start();
@@ -234,6 +416,8 @@ namespace AionToolPro.Desktop
             {
                 _networkChangeDebounceCts?.Cancel();
                 _networkChangeDebounceCts?.Dispose();
+                _updateCts?.Cancel();
+                _updateCts?.Dispose();
                 _networkChangeDebounceCts = new CancellationTokenSource();
                 var token = _networkChangeDebounceCts.Token;
 
@@ -255,6 +439,11 @@ namespace AionToolPro.Desktop
             _isClosing = true;
             try
             {
+                if (_settingsSaveTimer.IsEnabled)
+                {
+                    _settingsSaveTimer.Stop();
+                    SaveCurrentSettings();
+                }
                 _nicTimer.Stop();
                 _pingTimer.Stop();
                 _consoleFlushTimer.Stop();
@@ -291,19 +480,6 @@ namespace AionToolPro.Desktop
         }
 
         // ==================== CUSTOM WINDOW CHROME HANDLERS ====================
-        private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ClickCount == 2)
-            {
-                BtnMaximize_Click(sender, e);
-                return;
-            }
-            if (e.LeftButton == MouseButtonState.Pressed)
-            {
-                try { DragMove(); } catch { }
-            }
-        }
-
         private void BtnMinimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
         private void BtnMaximize_Click(object sender, RoutedEventArgs e) =>
@@ -346,102 +522,216 @@ namespace AionToolPro.Desktop
 
         private void BuildDashboardDnsCards(IReadOnlyList<DnsProviderModel> providers, string? filter = null)
         {
-            DashboardDnsWrapPanel.Children.Clear();
+            DashboardDnsContainer.Children.Clear();
             _dnsCardBadges.Clear();
+            _dnsCategoryGrids.Clear();
 
             string q = (filter ?? string.Empty).Trim();
             var visible = string.IsNullOrEmpty(q)
-                ? providers
+                ? providers.ToList()
                 : providers.Where(p =>
                     p.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
                     p.PrimaryIp.Contains(q, StringComparison.OrdinalIgnoreCase) ||
                     p.SecondaryIp.Contains(q, StringComparison.OrdinalIgnoreCase) ||
                     p.CategoryLabel.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
 
-            foreach (var p in visible)
+            bool fa = _currentLang == "fa";
+            var monoFont = (FontFamily)FindResource("MonoFontFamily");
+            var cardStyle = (Style)FindResource("DnsCardBtnStyle");
+            int cols = GetDnsGridColumns();
+
+            var groups = new (DnsGroupColor ColorKey, string TitleEn, string TitleFa, string DotHex)[]
             {
-                var badgeColor = ParseColor(p.BadgeHex);
-                var badgeBrush = Freeze(new SolidColorBrush(badgeColor));
-                var badgeBgBrush = Freeze(new SolidColorBrush(Color.FromArgb(35, badgeColor.R, badgeColor.G, badgeColor.B)));
+                (DnsGroupColor.OrangeAntiFilter, "IRAN / GAMING",           "ایران و گیمینگ (تحریم‌شکن)", "#FB923C"),
+                (DnsGroupColor.BlueGeneral,      "GLOBAL PUBLIC DNS",       "سرورهای عمومی جهانی",        "#38BDF8"),
+                (DnsGroupColor.YellowSecurity,   "SECURITY & AD-BLOCKING",  "امنیت و مسدودساز تبلیغات",   "#FACC15"),
+                (DnsGroupColor.PurpleCustom,     "CUSTOM SAVED PROFILES",   "پروفایل‌های شخصی ذخیره‌شده",   "#A855F7")
+            };
 
-                var cardStack = new StackPanel { FlowDirection = FlowDirection.LeftToRight };
+            bool isFirstGroup = true;
+            foreach (var grp in groups)
+            {
+                var items = visible.Where(p => p.CategoryColor == grp.ColorKey).ToList();
+                if (items.Count == 0) continue;
 
-                var topRow = new DockPanel();
-                var titleTxt = new TextBlock
+                var dotBrush = Freeze(new SolidColorBrush(ParseColor(grp.DotHex)));
+
+                // Clean Category Header Bar
+                var headerPanel = new StackPanel
                 {
-                    Text = p.Name,
-                    FontSize = 13,
-                    FontWeight = FontWeights.Bold
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(2, isFirstGroup ? 0 : 12, 2, 8)
                 };
-                titleTxt.SetResourceReference(TextBlock.ForegroundProperty, "PrimaryTextBrush");
+                isFirstGroup = false;
 
-                var pillText = new TextBlock
+                headerPanel.Children.Add(new System.Windows.Shapes.Ellipse
                 {
-                    Text = p.CategoryLabel,
-                    FontSize = 8.5,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = badgeBrush
-                };
+                    Width = 8,
+                    Height = 8,
+                    Fill = dotBrush,
+                    Margin = new Thickness(0, 0, 7, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
 
-                var catPill = new Border
+                var grpTitle = new TextBlock
                 {
-                    Background = badgeBgBrush,
-                    BorderBrush = badgeBrush,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(5),
-                    Padding = new Thickness(6, 1.5, 6, 1.5),
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    Child = pillText
-                };
-
-                _dnsCardBadges[p.PrimaryIp] = (catPill, pillText);
-
-                topRow.Children.Add(titleTxt);
-                topRow.Children.Add(catPill);
-
-                var ipTxt = new TextBlock
-                {
-                    Text = $"{p.PrimaryIp}  ·  {p.SecondaryIp}",
-                    FontFamily = new FontFamily("Consolas"),
+                    Text = fa ? grp.TitleFa : grp.TitleEn,
                     FontSize = 11.5,
-                    FontWeight = FontWeights.SemiBold,
-                    Margin = new Thickness(0, 5, 0, 2)
+                    FontWeight = FontWeights.Bold,
+                    VerticalAlignment = VerticalAlignment.Center
                 };
-                ipTxt.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+                grpTitle.SetResourceReference(TextBlock.ForegroundProperty, "PrimaryTextBrush");
+                headerPanel.Children.Add(grpTitle);
 
-                var descTxt = new TextBlock
+                var countPill = new Border
                 {
-                    Text = p.Description,
-                    FontSize = 10.5,
-                    TextTrimming = TextTrimming.CharacterEllipsis
+                    Background = Freeze(new SolidColorBrush(Color.FromArgb(30, ParseColor(grp.DotHex).R, ParseColor(grp.DotHex).G, ParseColor(grp.DotHex).B))),
+                    CornerRadius = new CornerRadius(5),
+                    Padding = new Thickness(6, 1, 6, 1),
+                    Margin = new Thickness(8, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock
+                    {
+                        Text = items.Count.ToString(),
+                        FontSize = 10,
+                        FontWeight = FontWeights.Bold,
+                        FontFamily = monoFont,
+                        Foreground = dotBrush
+                    }
                 };
-                descTxt.SetResourceReference(TextBlock.ForegroundProperty, "MutedTextBrush");
+                headerPanel.Children.Add(countPill);
+                DashboardDnsContainer.Children.Add(headerPanel);
 
-                cardStack.Children.Add(topRow);
-                cardStack.Children.Add(ipTxt);
-                cardStack.Children.Add(descTxt);
-
-                var btn = new Button
+                // Precision UniformGrid: every card has 100% identical width & clean column edges
+                var grid = new UniformGrid
                 {
-                    Width = 246,
-                    Height = 76,
-                    Margin = new Thickness(0, 0, 10, 10),
-                    Padding = new Thickness(12, 8, 12, 8),
-                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                    VerticalContentAlignment = VerticalAlignment.Center,
-                    Style = (Style)FindResource("SecondaryBtnStyle"),
-                    Content = cardStack,
-                    Tag = p,
-                    ToolTip = $"{p.Name} — {p.PrimaryIp} , {p.SecondaryIp}"
+                    Columns = cols,
+                    FlowDirection = FlowDirection.LeftToRight,
+                    Margin = new Thickness(0, 0, -10, 0)
                 };
+                _dnsCategoryGrids.Add(grid);
 
-                btn.Click += async (s, _) =>
+                foreach (var p in items)
                 {
-                    if (s is Button b && b.Tag is DnsProviderModel provider)
-                        await ApplyDnsProviderWithUiFeedbackAsync(provider);
-                };
+                    var badgeColor = ParseColor(p.BadgeHex);
+                    var badgeBrush = Freeze(new SolidColorBrush(badgeColor));
+                    var badgeBgBrush = Freeze(new SolidColorBrush(Color.FromArgb(35, badgeColor.R, badgeColor.G, badgeColor.B)));
 
-                DashboardDnsWrapPanel.Children.Add(btn);
+                    var cardGrid = new Grid
+                    {
+                        FlowDirection = FlowDirection.LeftToRight,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    cardGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    cardGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    cardGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                    // Row 0: 2-Column Grid so title is always flush-left and pill is always flush-right (zero overlap)
+                    var topRow = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
+                    topRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    topRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                    var titleTxt = new TextBlock
+                    {
+                        Text = p.Name,
+                        FontSize = 13,
+                        FontWeight = FontWeights.Bold,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        Margin = new Thickness(0, 0, 8, 0)
+                    };
+                    titleTxt.SetResourceReference(TextBlock.ForegroundProperty, "PrimaryTextBrush");
+                    Grid.SetColumn(titleTxt, 0);
+
+                    var pillText = new TextBlock
+                    {
+                        Text = p.CategoryLabel,
+                        FontSize = 8.5,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = badgeBrush
+                    };
+
+                    var catPill = new Border
+                    {
+                        Background = badgeBgBrush,
+                        BorderBrush = badgeBrush,
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(5),
+                        Padding = new Thickness(6, 1.5, 6, 1.5),
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Child = pillText
+                    };
+                    Grid.SetColumn(catPill, 1);
+
+                    _dnsCardBadges[p.PrimaryIp] = (catPill, pillText);
+
+                    topRow.Children.Add(titleTxt);
+                    topRow.Children.Add(catPill);
+                    Grid.SetRow(topRow, 0);
+
+                    // Row 1: Crisp Monospace IPv4 Pair (fits cleanly even for 114.114.114.114 · 114.114.115.115)
+                    var ipTxt = new TextBlock
+                    {
+                        Text = $"{p.PrimaryIp} · {p.SecondaryIp}",
+                        FontFamily = monoFont,
+                        FontSize = 10.5,
+                        FontWeight = FontWeights.SemiBold,
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        Margin = new Thickness(0, 6, 0, 3)
+                    };
+                    ipTxt.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
+                    Grid.SetRow(ipTxt, 1);
+
+                    // Row 2: Clean Single-Line Description with Ellipsis
+                    var descTxt = new TextBlock
+                    {
+                        Text = p.Description,
+                        FontSize = 10.5,
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        TextTrimming = TextTrimming.CharacterEllipsis
+                    };
+                    descTxt.SetResourceReference(TextBlock.ForegroundProperty, "MutedTextBrush");
+                    Grid.SetRow(descTxt, 2);
+
+                    cardGrid.Children.Add(topRow);
+                    cardGrid.Children.Add(ipTxt);
+                    cardGrid.Children.Add(descTxt);
+
+                    var btn = new Button
+                    {
+                        Style = cardStyle,
+                        Content = cardGrid,
+                        Tag = p,
+                        ToolTip = $"{p.Name}\nPrimary: {p.PrimaryIp}\nSecondary: {p.SecondaryIp}\n{p.Description}"
+                    };
+
+                    btn.Click += async (s, _) =>
+                    {
+                        if (s is Button b && b.Tag is DnsProviderModel provider)
+                            await ApplyDnsProviderWithUiFeedbackAsync(provider);
+                    };
+
+                    grid.Children.Add(btn);
+                }
+
+                DashboardDnsContainer.Children.Add(grid);
+            }
+
+            if (DashboardDnsContainer.Children.Count == 0)
+            {
+                var emptyTxt = new TextBlock
+                {
+                    Text = fa ? "هیچ سرور دی‌ان‌اسی با این عبارت پیدا نشد." : "No DNS servers matched your search.",
+                    FontSize = 12,
+                    Margin = new Thickness(4, 10, 4, 10)
+                };
+                emptyTxt.SetResourceReference(TextBlock.ForegroundProperty, "MutedTextBrush");
+                DashboardDnsContainer.Children.Add(emptyTxt);
             }
         }
 
@@ -601,16 +891,38 @@ namespace AionToolPro.Desktop
         private void SelectTheme(ThemeDefinition theme)
         {
             _currentTheme = theme;
-            ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
-            UpdateSwatchSelectionHighlights();
+            if (theme.PreferGlassMode && !_glassMode)
+            {
+                _glassMode = true;
+                _suppressVisualSliders = true;
+                ChkGlassMode.IsChecked = true;
+                if (_transparencyPercent >= 95)
+                {
+                    _transparencyPercent = 68;
+                    SliderTransparency.Value = 68;
+                }
+                _suppressVisualSliders = false;
+            }
+            ApplyVisualState(animateTheme: true, forceBackdropRefresh: true);
             if (_isInitialized) SaveCurrentSettings();
         }
 
         private void SelectSurface(AppSurfacePalette surface)
         {
             _currentSurface = surface;
-            ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
-            UpdateSwatchSelectionHighlights();
+            if (surface.EnableGlass && !_glassMode)
+            {
+                _glassMode = true;
+                _suppressVisualSliders = true;
+                ChkGlassMode.IsChecked = true;
+                if (_transparencyPercent >= 95)
+                {
+                    _transparencyPercent = 68;
+                    SliderTransparency.Value = 68;
+                }
+                _suppressVisualSliders = false;
+            }
+            ApplyVisualState(animateTheme: true, forceBackdropRefresh: true);
             if (_isInitialized) SaveCurrentSettings();
         }
 
@@ -641,6 +953,20 @@ namespace AionToolPro.Desktop
 
             _currentTheme = AioCatalog.Themes.FirstOrDefault(t => t.Id == saved.ThemeId) ?? AioCatalog.Themes[0];
             _currentSurface = AioCatalog.SurfacePalettes.FirstOrDefault(s => s.Id == saved.SurfacePaletteId) ?? AioCatalog.SurfacePalettes[0];
+
+            _glassMode = saved.GlassMode || _currentSurface.EnableGlass;
+            _transparencyPercent = Math.Clamp(saved.TransparencyPercent, 35, 100);
+            _brightnessLevel = Math.Clamp(saved.BrightnessLevel, 0.75, 1.30);
+            _contrastLevel = Math.Clamp(saved.ContrastLevel, 0.80, 1.35);
+
+            _suppressVisualSliders = true;
+            ChkGlassMode.IsChecked = _glassMode;
+            SliderTransparency.Value = _transparencyPercent;
+            SliderBrightness.Value = Math.Round(_brightnessLevel * 100);
+            SliderContrast.Value = Math.Round(_contrastLevel * 100);
+            _suppressVisualSliders = false;
+
+            UpdateVisualSliderLabels();
             UpdateSwatchSelectionHighlights();
 
             if (!string.IsNullOrWhiteSpace(saved.InterfaceName) &&
@@ -701,7 +1027,11 @@ namespace AionToolPro.Desktop
                 _currentSurface.Id,
                 ChkMinimizeToTray.IsChecked == true,
                 _globalPingTarget,
-                _intranetPingTarget);
+                _intranetPingTarget,
+                _glassMode,
+                _transparencyPercent,
+                _brightnessLevel,
+                _contrastLevel);
         }
 
         private async Task LoadNetworkInterfacesAsync(bool preserveSelection = false)
@@ -739,6 +1069,10 @@ namespace AionToolPro.Desktop
             MainWorkspaceGrid.FlowDirection = fa ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
 
             LblNetworkAdaptor.Text = fa ? "کارت شبکه" : "Network Adaptor";
+            LblNavCatOverview.Text = fa ? "نمای کلی" : "OVERVIEW";
+            LblNavCatNetwork.Text  = fa ? "شبکه و دی‌ان‌اس" : "NETWORK & DNS";
+            LblNavCatSystem.Text   = fa ? "سیستم و امنیت" : "SYSTEM & SECURITY";
+            LblNavCatApp.Text      = fa ? "تنظیمات و راهنما" : "PREFERENCES";
             NavDashboard.Content   = fa ? "⚡  داشبورد" : "⚡  Dashboard";
             NavDnsTools.Content    = fa ? "🌐  مدیریت دی‌ان‌اس" : "🌐  DNS Studio";
             NavNetworkInfo.Content = fa ? "📡  اطلاعات شبکه" : "📡  Network Info";
@@ -752,11 +1086,12 @@ namespace AionToolPro.Desktop
             LblActiveDnsCard.Text  = fa ? "دی‌ان‌اس فعال" : "ACTIVE DNS";
 
             LblDashStatusHeader.Text      = fa ? "وضعیت لحظه‌ای شبکه سیستم" : "SYSTEM NETWORK STATUS";
-            BtnGameBooster.Content        = fa ? "🎮 بهینه‌ساز گیمینگ" : "🎮 Game Booster";
-            BtnRestoreNormalMode.Content  = fa ? "🔄 بازگردانی حالت عادی" : "🔄 Restore Normal";
+            UpdateGameBoosterButtonUi();
             BtnDashFastestDns.Content     = fa ? "⚡ سریع‌ترین دی‌ان‌اس" : "⚡ Fastest DNS";
-            BtnDashAutoDns.Content        = fa ? "↺ دی‌ان‌اس خودکار" : "↺ Automatic DNS";
-            BtnDashFlushDns.Content       = fa ? "🧹 پاکسازی کش" : "🧹 Flush Cache";
+            BtnDashResetDns.Content       = fa ? "↺ ریست دی‌ان‌اس" : "↺ Reset DNS";
+            BtnDashResetDns.ToolTip       = fa ? "بازگردانی دی‌ان‌اس به حالت خودکار (DHCP) و پاکسازی کامل کش دی‌ان‌اس" : "Reset DNS to automatic DHCP and clear DNS cache";
+            BtnDashResetAdapter.Content   = fa ? "🔄 ریست کارت شبکه" : "🔄 Reset Adaptor";
+            BtnDashResetAdapter.ToolTip   = fa ? "ریست کامل کارت شبکه، تخلیه کش و دریافت مجدد آی‌پی" : "Full network adaptor reset and IP renew";
             LblDashQuickDnsTitle.Text     = fa ? "تغییر سریع دی‌ان‌اس با یک کلیک" : "QUICK DNS SWITCHER";
             TxtSearchDns.ToolTip          = fa ? "جستجوی DNS بر اساس نام یا آی‌پی..." : "Search DNS by name or IP...";
 
@@ -857,11 +1192,17 @@ namespace AionToolPro.Desktop
             BtnExportSettings.Content   = fa ? "📤 خروجی" : "📤 Export";
             BtnImportSettings.Content   = fa ? "📥 ورود" : "📥 Import";
 
-            LblThemeStudioTitle.Text    = fa ? "ظاهر و تنظیمات برنامه" : "Appearance & Preferences";
-            LblThemeSelect.Text         = fa ? "تم رنگی" : "Accent Theme";
-            LblAppBgPaletteTitle.Text   = fa ? "رنگ پس‌زمینه برنامه" : "Background Surface";
-            LblLanguageSelect.Text      = fa ? "زبان:" : "Language:";
-            ChkDarkMode.Content         = fa ? "حالت تاریک" : "Dark Mode";
+            LblThemeStudioTitle.Text       = fa ? "استودیو ظاهر و گرافیک" : "Appearance & Visual Studio";
+            LblThemeSelect.Text            = fa ? "تم رنگی" : "Accent Theme";
+            LblAppBgPaletteTitle.Text      = fa ? "رنگ پس‌زمینه برنامه" : "Background Surface";
+            LblLanguageSelect.Text         = fa ? "زبان:" : "Language:";
+            ChkDarkMode.Content            = fa ? "حالت تاریک" : "Dark Mode";
+            ChkGlassMode.Content           = fa ? "حالت شیشه‌ای (Glass)" : "Glass Mode";
+            LblVisualCalibrationTitle.Text = fa ? "تنظیم شفافیت، نور و کنتراست نمایشگر" : "Display Calibration (Transparency, Brightness & Contrast)";
+            LblTransparencySlider.Text     = fa ? "شفافیت (Transparency)" : "Transparency";
+            LblBrightnessSlider.Text       = fa ? "روشنایی (Brightness)" : "Brightness";
+            LblContrastSlider.Text         = fa ? "کنتراست (Contrast)" : "Contrast";
+            BtnResetVisuals.Content        = fa ? "↺ بازگشت پیش‌فرض" : "↺ Reset Visuals";
             ChkRememberSettings.Content = fa ? "ذخیره تنظیمات" : "Remember Settings";
             ChkEnableLogging.Content    = fa ? "ثبت گزارش" : "Save Action Log";
             ChkMinimizeToTray.Content   = fa ? "کوچک شدن در سینی سیستم (Tray)" : "Minimize to System Tray";
@@ -902,8 +1243,8 @@ namespace AionToolPro.Desktop
 
             LblHelpCard6Title.Text  = fa ? "🛡️ گیم‌بوستر ایمن، نگهداری و بروزرسانی" : "🛡️ Game Booster, Maintenance & Updates";
             TxtHelpCard6Body.Text   = fa
-                ? "• گیم‌بوستر ایمن: فقط سرویس‌های غیرضروری در حال اجرا را موقتاً متوقف می‌کند و با دکمه «بازگردانی حالت عادی» دقیقاً همان سرویس‌ها را برمی‌گرداند.\n• نگهداری و تعمیرات: پاکسازی امن فایل‌های موقت قدیمی‌تر از ۲۴ ساعت (با محافظت از کش .NET)، تعمیر سیستمی DISM+SFC، ریست ایمن آپدیت ویندوز، پروکسی و بکاپ فایروال.\n• سینی سیستم و آپدیت خودکار: تغییر سریع DNS از منوی Tray، اجرای خودکار با ویندوز و آپدیت خاموش گیت‌هاب با تایید هش SHA-256."
-                : "• Safe Game Booster: Pauses only currently running non-essential services and restores exact original state with Restore Normal.\n• Maintenance & Repair: 24h-guarded Temp cleaner (protects %TEMP%\\.net), DISM+SFC, safe Windows Update reset, Proxy & Firewall backup/reset.\n• System Tray & Auto-Updater: Quick DNS tray menu, elevated Start-with-Windows, and SHA-256 verified silent GitHub updates.";
+                ? "• گیم‌بوستر تک‌دکمه‌ای (سبز/قرمز): با یک کلیک فعال (قرمز) شده و سرویس‌های غیرضروری در حال اجرا را متوقف می‌کند؛ با کلیک مجدد دقیقاً همان سرویس‌ها برمی‌گردند و دکمه سبز می‌شود.\n• نگهداری و تعمیرات: پاکسازی امن فایل‌های موقت قدیمی‌تر از ۲۴ ساعت (با محافظت از کش .NET)، تعمیر سیستمی DISM+SFC، ریست ایمن آپدیت ویندوز، پروکسی و بکاپ فایروال.\n• سینی سیستم و آپدیت خودکار: تغییر سریع DNS از منوی Tray، اجرای خودکار با ویندوز و آپدیت خاموش گیت‌هاب با تایید هش SHA-256."
+                : "• One-Click Game Booster Toggle (Green/Red): Click once (turns Red) to pause running non-essential services; click again (turns Green) to restore exact original services.\n• Maintenance & Repair: 24h-guarded Temp cleaner (protects %TEMP%\\.net), DISM+SFC, safe Windows Update reset, Proxy & Firewall backup/reset.\n• System Tray & Auto-Updater: Quick DNS tray menu, elevated Start-with-Windows, and SHA-256 verified silent GitHub updates.";
 
             LblConsoleHeader.Text    = fa ? "▶ خروجی زنده دستورات سیستم" : "▶ LIVE COMMAND STREAM";
             BtnCancelCommand.Content = fa ? "⏹ توقف" : "⏹ Stop";
@@ -933,7 +1274,13 @@ namespace AionToolPro.Desktop
                 GridWifiPasswords.Columns[2].Header = fa ? "وضعیت امنیت" : "Security Status";
             }
 
-            UpdateActiveDnsCardHighlight(_lastDetectedPrimaryDns);
+            BtnMinimize.ToolTip = fa ? "کوچک‌نمایی" : "Minimize";
+            BtnClose.ToolTip    = fa ? "بستن" : "Close";
+            ApplyWindowMaximizeBounds();
+            if (_isInitialized)
+                RefreshDnsCatalogUi();
+            else
+                UpdateActiveDnsCardHighlight(_lastDetectedPrimaryDns);
         }
 
         // ==================== REAL-TIME TELEMETRY (DECOUPLED 1s NIC + 1.5s PING) ====================
@@ -1258,9 +1605,15 @@ namespace AionToolPro.Desktop
             }
 
             if (tracker.MinMs.HasValue)
-                txtStats.Text = $"Loss {tracker.LossPercent:F1}% ({tracker.LostSamples}/{tracker.WindowSamples}) · Min {tracker.MinMs} · Avg {tracker.AvgMs} · Max {tracker.MaxMs}";
+            {
+                txtStats.Text = $"Loss {tracker.LossPercent:F0}% · {tracker.MinMs}/{tracker.AvgMs}/{tracker.MaxMs} ms";
+                txtStats.ToolTip = $"Packet Loss: {tracker.LossPercent:F1}% ({tracker.LostSamples}/{tracker.WindowSamples}) | Min {tracker.MinMs} ms · Avg {tracker.AvgMs} ms · Max {tracker.MaxMs} ms";
+            }
             else
-                txtStats.Text = $"Loss {tracker.LossPercent:F1}% ({tracker.LostSamples}/{tracker.WindowSamples}) · Min -- · Avg -- · Max --";
+            {
+                txtStats.Text = $"Loss {tracker.LossPercent:F0}% · --/--/-- ms";
+                txtStats.ToolTip = $"Packet Loss: {tracker.LossPercent:F1}% ({tracker.LostSamples}/{tracker.WindowSamples})";
+            }
         }
 
         private static void AnimateBarWidth(Border bar, double targetWidth)
@@ -1268,9 +1621,9 @@ namespace AionToolPro.Desktop
             if (double.IsNaN(targetWidth) || double.IsInfinity(targetWidth) || targetWidth < 0)
                 targetWidth = 12;
 
-            var anim = new DoubleAnimation(targetWidth, TimeSpan.FromMilliseconds(320))
+            var anim = new DoubleAnimation(targetWidth, TimeSpan.FromMilliseconds(280))
             {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                EasingFunction = new QuinticEase { EasingMode = EasingMode.EaseOut }
             };
             bar.BeginAnimation(WidthProperty, anim);
         }
@@ -1289,16 +1642,23 @@ namespace AionToolPro.Desktop
             ViewSettings.Visibility    = section == "Settings"    ? Visibility.Visible : Visibility.Collapsed;
             ViewHelp.Visibility        = section == "Help"        ? Visibility.Visible : Visibility.Collapsed;
 
-            var fadeAnim = new DoubleAnimation(0.2, 1.0, TimeSpan.FromMilliseconds(200))
+            var fadeAnim = new DoubleAnimation(0.15, 1.0, TimeSpan.FromMilliseconds(210))
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
-            var slideAnim = new DoubleAnimation(12.0, 0.0, TimeSpan.FromMilliseconds(220))
+            var slideAnim = new DoubleAnimation(14.0, 0.0, TimeSpan.FromMilliseconds(250))
             {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                EasingFunction = new QuinticEase { EasingMode = EasingMode.EaseOut }
             };
+            var scaleAnim = new DoubleAnimation(0.988, 1.0, TimeSpan.FromMilliseconds(240))
+            {
+                EasingFunction = new QuinticEase { EasingMode = EasingMode.EaseOut }
+            };
+
             WorkspaceAnimatedRoot.BeginAnimation(OpacityProperty, fadeAnim);
             WorkspaceSlideTransform.BeginAnimation(TranslateTransform.YProperty, slideAnim);
+            WorkspaceScaleTransform.BeginAnimation(ScaleTransform.ScaleXProperty, scaleAnim);
+            WorkspaceScaleTransform.BeginAnimation(ScaleTransform.ScaleYProperty, scaleAnim);
 
             if (section == "NetworkInfo" && GridAppNetworkMonitor.ItemsSource == null)
             {
@@ -1326,8 +1686,56 @@ namespace AionToolPro.Desktop
         private void ChkDarkMode_Changed(object sender, RoutedEventArgs e)
         {
             if (!_isInitialized) return;
-            ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
-            UpdateSwatchSelectionHighlights();
+            ApplyVisualState(animateTheme: true, forceBackdropRefresh: true);
+            SaveCurrentSettings();
+        }
+
+        private void ChkGlassMode_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_isInitialized || _suppressVisualSliders) return;
+            _glassMode = ChkGlassMode.IsChecked == true;
+            if (_glassMode && _transparencyPercent >= 95)
+            {
+                _suppressVisualSliders = true;
+                _transparencyPercent = 68;
+                SliderTransparency.Value = 68;
+                _suppressVisualSliders = false;
+            }
+            else if (!_glassMode && _currentSurface.EnableGlass)
+            {
+                _currentSurface = AioCatalog.SurfacePalettes[0];
+            }
+            ApplyVisualState(animateTheme: true, forceBackdropRefresh: true);
+            SaveCurrentSettings();
+        }
+
+        private void VisualSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (!_isInitialized || _suppressVisualSliders) return;
+            _transparencyPercent = (int)Math.Round(SliderTransparency.Value);
+            _brightnessLevel = SliderBrightness.Value / 100.0;
+            _contrastLevel = SliderContrast.Value / 100.0;
+            ApplyVisualState(animateTheme: false);
+            ScheduleDebouncedSettingsSave();
+        }
+
+        private void BtnResetVisuals_Click(object sender, RoutedEventArgs e)
+        {
+            _glassMode = false;
+            _transparencyPercent = 100;
+            _brightnessLevel = 1.0;
+            _contrastLevel = 1.0;
+            if (_currentSurface.EnableGlass)
+                _currentSurface = AioCatalog.SurfacePalettes[0];
+
+            _suppressVisualSliders = true;
+            ChkGlassMode.IsChecked = false;
+            SliderTransparency.Value = 100;
+            SliderBrightness.Value = 100;
+            SliderContrast.Value = 100;
+            _suppressVisualSliders = false;
+
+            ApplyVisualState(animateTheme: true, forceBackdropRefresh: true);
             SaveCurrentSettings();
         }
 
@@ -1341,7 +1749,7 @@ namespace AionToolPro.Desktop
             _globalPingTracker.Reset();
             TxtPingGlobal.Text = "-- ms";
             TxtJitterGlobal.Text = "±0 ms";
-            TxtStatsGlobal.Text = "Loss 0.0% (0/0) · Min -- · Avg -- · Max --";
+            TxtStatsGlobal.Text = "Loss 0% · --/--/-- ms";
             TxtBadgeGlobal.Text = "SWITCHING";
             UpdatePingCardHeaders();
             SaveCurrentSettings();
@@ -1359,7 +1767,7 @@ namespace AionToolPro.Desktop
             _intranetPingTracker.Reset();
             TxtPingIntranet.Text = "-- ms";
             TxtJitterIntranet.Text = "±0 ms";
-            TxtStatsIntranet.Text = "Loss 0.0% (0/0) · Min -- · Avg -- · Max --";
+            TxtStatsIntranet.Text = "Loss 0% · --/--/-- ms";
             TxtBadgeIntranet.Text = "SWITCHING";
             UpdatePingCardHeaders();
             SaveCurrentSettings();
@@ -1416,7 +1824,11 @@ namespace AionToolPro.Desktop
                     _currentSurface.Id,
                     ChkMinimizeToTray.IsChecked == true,
                     _globalPingTarget,
-                    _intranetPingTarget);
+                    _intranetPingTarget,
+                    _glassMode,
+                    _transparencyPercent,
+                    _brightnessLevel,
+                    _contrastLevel);
 
                 var res = await _service.ExportSettingsBundleAsync(dlg.FileName, current);
                 MessageBox.Show(res.Message, "Export Settings", MessageBoxButton.OK, res.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
@@ -1438,8 +1850,7 @@ namespace AionToolPro.Desktop
                     _isInitialized = false;
                     ApplySettingsModelToUi(bundle.Settings);
                     _isInitialized = true;
-                    ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
-                    UpdateSwatchSelectionHighlights();
+                    ApplyVisualState();
                     ApplyLanguage(_currentLang);
                     RefreshDnsCatalogUi();
                     ResetLiveTelemetryBaselines();
@@ -1523,9 +1934,12 @@ namespace AionToolPro.Desktop
         private async void BtnResetDnsDhcp_Click(object sender, RoutedEventArgs e) =>
             await SafeRunAsync(async () =>
             {
+                EnqueueConsoleLine($"[DNS] Resetting DNS to automatic DHCP and clearing DNS cache on '{_selectedInterface}'...");
                 var res = await _service.ResetDnsToDhcpAsync(_selectedInterface);
                 if (!res.Success)
                     MessageBox.Show(res.Message, "Reset DNS", MessageBoxButton.OK, MessageBoxImage.Warning);
+                else
+                    EnqueueConsoleLine("[DNS] DNS reset to automatic DHCP and DNS cache cleared successfully.");
                 await RefreshRealTimeTelemetryAsync();
             }, "ResetDNS");
 
@@ -1678,27 +2092,77 @@ namespace AionToolPro.Desktop
                 MessageBox.Show(res.Message, "Remove DoH", MessageBoxButton.OK, res.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
             }, "RemoveDoH");
 
-        // ==================== GAME BOOSTER & NETWORK INFO HANDLERS ====================
+        // ==================== SINGLE-BUTTON TOGGLE GAME BOOSTER (GREEN / RED) ====================
+        private void UpdateGameBoosterButtonUi()
+        {
+            bool fa = _currentLang == "fa";
+            if (_isGameBoosterActive)
+            {
+                BtnGameBooster.Style = (Style)FindResource("DangerBtnStyle");
+                BtnGameBooster.Content = fa ? "🛑 گیم‌بوستر فعال (خاموش)" : "🛑 Game Booster: ON";
+                BtnGameBooster.ToolTip = fa
+                    ? "گیم‌بوستر فعال است — برای بازگردانی سرویس‌ها به حالت عادی دوباره کلیک کنید"
+                    : "Game Booster is ACTIVE — Click again to restore normal Windows services";
+                BdGameBoosterPill.Visibility = Visibility.Visible;
+                BdGameBoosterPill.Background = FrozenRedBg;
+                BdGameBoosterPill.BorderBrush = FrozenRed;
+                TxtGameBoosterPill.Foreground = FrozenRed;
+                TxtGameBoosterPill.Text = fa ? "● حالت گیمینگ فعال" : "● GAME MODE ACTIVE";
+            }
+            else
+            {
+                BtnGameBooster.Style = (Style)FindResource("SuccessBtnStyle");
+                BtnGameBooster.Content = fa ? "🎮 بهینه‌ساز گیمینگ" : "🎮 Game Booster";
+                BtnGameBooster.ToolTip = fa
+                    ? "کلیک کنید تا سرویس‌های غیرضروری ویندوز موقتاً متوقف شوند (با کلیک مجدد برمی‌گردند)"
+                    : "Click to safely pause non-essential Windows services for gaming (click again to restore)";
+                BdGameBoosterPill.Visibility = Visibility.Collapsed;
+            }
+        }
+
         private async void BtnGameBooster_Click(object sender, RoutedEventArgs e) =>
             await SafeRunAsync(async () =>
             {
-                if (MessageBox.Show(
-                        "This will safely pause currently running non-essential Windows services (SysMain, Telemetry, Search, Update) and close desktop widgets without wiping RAM or touching your browsers.\n\nUse 'Restore Normal' afterwards to re-enable only the services that were running. Proceed?",
-                        "Game Booster",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question) != MessageBoxResult.Yes)
-                    return;
-
-                var res = await _service.OptimizeForGamingAsync();
-                MessageBox.Show(res.Message, "Game Booster", MessageBoxButton.OK, res.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                bool fa = _currentLang == "fa";
+                BtnGameBooster.IsEnabled = false;
+                try
+                {
+                    if (!_isGameBoosterActive)
+                    {
+                        BtnGameBooster.Content = fa ? "⏳ در حال فعال‌سازی..." : "⏳ Activating...";
+                        var res = await _service.OptimizeForGamingAsync();
+                        if (res.Success)
+                        {
+                            _isGameBoosterActive = true;
+                        }
+                        else
+                        {
+                            MessageBox.Show(res.Message, "Game Booster", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                    }
+                    else
+                    {
+                        BtnGameBooster.Content = fa ? "⏳ در حال بازگردانی..." : "⏳ Restoring...";
+                        var res = await _service.RestoreNormalModeAsync();
+                        if (res.Success)
+                        {
+                            _isGameBoosterActive = false;
+                        }
+                        else
+                        {
+                            MessageBox.Show(res.Message, "Game Booster", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                    }
+                }
+                finally
+                {
+                    if (!_isClosing)
+                    {
+                        UpdateGameBoosterButtonUi();
+                        BtnGameBooster.IsEnabled = true;
+                    }
+                }
             }, "GameBooster");
-
-        private async void BtnRestoreNormalMode_Click(object sender, RoutedEventArgs e) =>
-            await SafeRunAsync(async () =>
-            {
-                var res = await _service.RestoreNormalModeAsync();
-                MessageBox.Show(res.Message, "Restore Normal Mode", MessageBoxButton.OK, res.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
-            }, "RestoreNormalMode");
 
         private async void BtnSpeedTest_Click(object sender, RoutedEventArgs e) =>
             await SafeRunAsync(async () =>
@@ -2219,68 +2683,400 @@ namespace AionToolPro.Desktop
             ConsoleOutputBox.ScrollToEnd();
         }
 
-        private async void BtnCheckUpdate_Click(object sender, RoutedEventArgs e) =>
+        // ==================== GRAPHICAL SOFTWARE UPDATE CENTER MODAL ====================
+        private static string FormatBytesMb(long bytes) =>
+            bytes <= 0 ? "0.0 MB" : $"{bytes / 1048576.0:F1} MB";
+
+        private void ShowUpdateModalOverlay()
+        {
+            bool fa = _currentLang == "fa";
+            UpdateModalCard.FlowDirection = fa ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+            LblUpdateNotesHeader.Text     = fa ? "تغییرات نسخه جدید" : "What's New";
+            BtnUpdateStartDownload.Content = fa ? "⬇ دانلود و نصب خودکار" : "⬇ Download & Install";
+            BtnUpdateRetry.Content         = fa ? "🔄 تلاش مجدد" : "🔄 Retry";
+            BtnUpdateCancel.Content        = fa ? "⏹ لغو" : "⏹ Cancel";
+            BtnUpdateClose.Content         = fa ? "بستن" : "Close";
+
+            if (UpdateModalOverlay.Visibility != Visibility.Visible)
+            {
+                UpdateModalOverlay.Visibility = Visibility.Visible;
+                var fade = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(180))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                var scale = new DoubleAnimation(0.92, 1.0, TimeSpan.FromMilliseconds(220))
+                {
+                    EasingFunction = new QuinticEase { EasingMode = EasingMode.EaseOut }
+                };
+                UpdateModalOverlay.BeginAnimation(OpacityProperty, fade);
+                UpdateModalScaleTransform.BeginAnimation(ScaleTransform.ScaleXProperty, scale);
+                UpdateModalScaleTransform.BeginAnimation(ScaleTransform.ScaleYProperty, scale);
+            }
+        }
+
+        private void HideUpdateModalOverlay()
+        {
+            if (_isUpdateBusy)
+            {
+                try { _updateCts?.Cancel(); } catch { }
+            }
+            UpdateModalOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private void SetUpdateModalThemeBadge(string tone, string iconGlyph)
+        {
+            TxtUpdateIcon.Text = iconGlyph;
+            switch (tone)
+            {
+                case "green":
+                    BdUpdateIconCircle.Background = FrozenGreenBg;
+                    BdUpdateIconCircle.BorderBrush = FrozenGreen;
+                    UpdateModalCard.BorderBrush = FrozenGreen;
+                    break;
+                case "amber":
+                    BdUpdateIconCircle.Background = FrozenAmberBg;
+                    BdUpdateIconCircle.BorderBrush = FrozenAmber;
+                    UpdateModalCard.BorderBrush = FrozenAmber;
+                    break;
+                case "red":
+                    BdUpdateIconCircle.Background = FrozenRedBg;
+                    BdUpdateIconCircle.BorderBrush = FrozenRed;
+                    UpdateModalCard.BorderBrush = FrozenRed;
+                    break;
+                default:
+                    BdUpdateIconCircle.SetResourceReference(Border.BackgroundProperty, "AccentSoftBrush");
+                    BdUpdateIconCircle.SetResourceReference(Border.BorderBrushProperty, "AccentBrush");
+                    UpdateModalCard.SetResourceReference(Border.BorderBrushProperty, "AccentBrush");
+                    break;
+            }
+        }
+
+        private void SetUpdateStatusBanner(string tone, string text)
+        {
+            BdUpdateStatusBanner.Visibility = Visibility.Visible;
+            TxtUpdateStatusBanner.Text = text;
+            switch (tone)
+            {
+                case "green":
+                    BdUpdateStatusBanner.Background = FrozenGreenBg;
+                    BdUpdateStatusBanner.BorderBrush = FrozenGreen;
+                    break;
+                case "amber":
+                    BdUpdateStatusBanner.Background = FrozenAmberBg;
+                    BdUpdateStatusBanner.BorderBrush = FrozenAmber;
+                    break;
+                default:
+                    BdUpdateStatusBanner.Background = FrozenRedBg;
+                    BdUpdateStatusBanner.BorderBrush = FrozenRed;
+                    break;
+            }
+        }
+
+        private async void BtnCheckUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdateBusy)
+            {
+                ShowUpdateModalOverlay();
+                return;
+            }
+            await StartUpdateCheckFlowAsync();
+        }
+
+        private async Task StartUpdateCheckFlowAsync() =>
             await SafeRunAsync(async () =>
             {
-                BtnCheckUpdate.IsEnabled = false;
                 bool fa = _currentLang == "fa";
-                BtnCheckUpdate.Content = fa ? "در حال بررسی گیت‌هاب..." : "Checking GitHub...";
+                _pendingUpdateInfo = null;
+                _isUpdateBusy = true;
+                BtnCheckUpdate.IsEnabled = false;
+
+                _updateCts?.Cancel();
+                _updateCts?.Dispose();
+                _updateCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                var token = _updateCts.Token;
+
+                ShowUpdateModalOverlay();
+
+                // State: CHECKING
+                SetUpdateModalThemeBadge("accent", "🔍");
+                TxtUpdateTitle.Text = fa ? "بررسی بروزرسانی نرم‌افزار" : "Checking for Updates";
+                TxtUpdateSubtitle.Text = fa
+                    ? $"نسخه فعلی: v{AioNetworkService.GetAppVersionString()} — اتصال امن به گیت‌هاب..."
+                    : $"Current version: v{AioNetworkService.GetAppVersionString()} — Connecting to GitHub Releases...";
+
+                BdUpdateVersionStrip.Visibility = Visibility.Collapsed;
+                BdUpdateStatusBanner.Visibility = Visibility.Collapsed;
+                BdUpdateNotesBox.Visibility = Visibility.Collapsed;
+
+                PanelUpdateProgress.Visibility = Visibility.Visible;
+                TxtUpdateStage.Text = fa ? "در حال دریافت اطلاعات آخرین ریلیز..." : "Fetching latest release info...";
+                TxtUpdatePercent.Text = "...";
+                BarUpdateProgress.IsIndeterminate = true;
+                BarUpdateProgress.Value = 0;
+                TxtUpdateTransferStats.Text = "HTTPS TLS 1.2/1.3 · api.github.com/repos/Yoqaizo/AionToolPro";
+
+                BtnUpdateStartDownload.Visibility = Visibility.Collapsed;
+                BtnUpdateRetry.Visibility = Visibility.Collapsed;
+                BtnUpdateClose.Visibility = Visibility.Collapsed;
+                BtnUpdateCancel.Visibility = Visibility.Visible;
+                BtnUpdateModalCloseTop.IsEnabled = false;
 
                 try
                 {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-                    var info = await _service.CheckForUpdateInfoAsync("Yoqaizo", "AionToolPro", cts.Token);
+                    var info = await _service.CheckForUpdateInfoAsync("Yoqaizo", "AionToolPro", token);
+                    if (_isClosing) return;
 
-                    if (!info.HasUpdate)
+                    BarUpdateProgress.IsIndeterminate = false;
+                    PanelUpdateProgress.Visibility = Visibility.Collapsed;
+                    BtnUpdateCancel.Visibility = Visibility.Collapsed;
+                    BtnUpdateModalCloseTop.IsEnabled = true;
+
+                    if (info.IsCancelled)
                     {
-                        MessageBox.Show(info.Message, "AionToolPro Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                        ShowUpdateCancelledUi(fa ? "بررسی بروزرسانی توسط کاربر لغو شد." : "Update check was cancelled by user.");
                         return;
                     }
 
-                    string notesPreview = string.IsNullOrWhiteSpace(info.ReleaseNotes)
-                        ? "No release notes provided."
-                        : (info.ReleaseNotes.Length > 500 ? info.ReleaseNotes[..500] + "..." : info.ReleaseNotes);
-                    string shaStatus = string.IsNullOrWhiteSpace(info.ChecksumUrl) ? "Standard HTTPS" : "HTTPS + SHA-256 Verified";
-                    string modeNote = AioNetworkService.IsInstalledCopy()
-                        ? ""
-                        : "\nNote: You are running a portable copy. Installing will install the new version into Program Files.";
-
-                    var confirm = MessageBox.Show(
-                        $"New version v{info.LatestVersion} is available (current: v{info.CurrentVersion}).\nVerification: {shaStatus}{modeNote}\n\nWhat's New:\n{notesPreview}\n\nDownload and install silently now?",
-                        "Update Available",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
-
-                    if (confirm != MessageBoxResult.Yes)
+                    if (info.IsError)
+                    {
+                        ShowUpdateErrorUi(info.Message);
                         return;
+                    }
 
-                    ProgressUpdate.Value = 0;
-                    ProgressUpdate.Visibility = Visibility.Visible;
-                    var progress = new Progress<int>(pct =>
+                    if (!info.HasUpdate)
                     {
-                        ProgressUpdate.Value = pct;
-                        BtnCheckUpdate.Content = fa ? $"در حال دانلود... {pct}%" : $"Downloading... {pct}%";
-                    });
+                        // State: UP TO DATE
+                        SetUpdateModalThemeBadge("green", "✓");
+                        TxtUpdateTitle.Text = fa ? "برنامه کاملاً به‌روز است!" : "You Are Up to Date!";
+                        TxtUpdateSubtitle.Text = fa
+                            ? $"آخرین نسخه رسمی (v{info.CurrentVersion}) هم‌اکنون روی سیستم شما نصب است."
+                            : $"AionToolPro v{info.CurrentVersion} is the latest available release.";
+                        SetUpdateStatusBanner("green", fa
+                            ? $"✓ نسخه فعلی شما (v{info.CurrentVersion}) با آخرین ریلیز گیت‌هاب مطابقت دارد."
+                            : $"✓ {info.Message}");
+                        BtnUpdateClose.Visibility = Visibility.Visible;
+                        return;
+                    }
 
-                    string result = await _service.DownloadAndInstallUpdateAsync(info, progress, cts.Token);
-                    if (result == "READY_TO_UPDATE")
+                    // State: UPDATE AVAILABLE
+                    _pendingUpdateInfo = info;
+                    SetUpdateModalThemeBadge("accent", "🚀");
+                    TxtUpdateTitle.Text = fa ? $"نسخه جدید v{info.LatestVersion} آماده است!" : $"Update v{info.LatestVersion} Available!";
+                    TxtUpdateSubtitle.Text = fa
+                        ? "نسخه جدید با تایید امنیت و نصب خاموش آماده دانلود است."
+                        : "A newer official release is ready to download and install cleanly.";
+
+                    BdUpdateVersionStrip.Visibility = Visibility.Visible;
+                    TxtUpdateVersionFlow.Text = $"v{info.CurrentVersion}  →  v{info.LatestVersion}";
+                    bool hasSha = !string.IsNullOrWhiteSpace(info.ChecksumUrl);
+                    TxtUpdateVerifyText.Text = hasSha ? "🔒 HTTPS + SHA-256" : "🔒 HTTPS Verified";
+
+                    string notesText = string.IsNullOrWhiteSpace(info.ReleaseNotes)
+                        ? (fa ? "توضیحاتی برای این ریلیز ثبت نشده است." : "No release notes provided for this version.")
+                        : info.ReleaseNotes.Trim();
+
+                    if (!AioNetworkService.IsInstalledCopy())
                     {
+                        notesText += fa
+                            ? "\n\nتوجه: شما در حال اجرای نسخه پرتابل هستید؛ نصب این آپدیت نسخه جدید را در Program Files نصب می‌کند."
+                            : "\n\nNote: You are running a portable copy. Installing will place the updated app in Program Files.";
+                    }
+
+                    TxtUpdateNotes.Text = notesText;
+                    BdUpdateNotesBox.Visibility = Visibility.Visible;
+
+                    BtnUpdateStartDownload.Visibility = Visibility.Visible;
+                    BtnUpdateClose.Visibility = Visibility.Visible;
+                }
+                finally
+                {
+                    _isUpdateBusy = false;
+                    if (!_isClosing)
+                    {
+                        BtnCheckUpdate.IsEnabled = true;
+                        BtnUpdateModalCloseTop.IsEnabled = true;
+                    }
+                }
+            }, "AutoUpdater", showErrorDialog: false);
+
+        private async void BtnUpdateStartDownload_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdateBusy || _pendingUpdateInfo == null) return;
+            await StartUpdateDownloadFlowAsync(_pendingUpdateInfo);
+        }
+
+        private async Task StartUpdateDownloadFlowAsync(UpdateCheckResult info) =>
+            await SafeRunAsync(async () =>
+            {
+                bool fa = _currentLang == "fa";
+                _isUpdateBusy = true;
+                BtnCheckUpdate.IsEnabled = false;
+
+                _updateCts?.Cancel();
+                _updateCts?.Dispose();
+                _updateCts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+                var token = _updateCts.Token;
+
+                // State: DOWNLOADING
+                SetUpdateModalThemeBadge("accent", "⬇");
+                TxtUpdateTitle.Text = fa ? $"در حال دانلود نسخه v{info.LatestVersion}..." : $"Downloading AionToolPro v{info.LatestVersion}...";
+                TxtUpdateSubtitle.Text = fa
+                    ? "لطفاً صبر کنید — می‌توانید در هر لحظه دانلود را لغو کنید."
+                    : "Downloading securely into an ACL-locked staging folder. You can cancel anytime.";
+
+                BdUpdateVersionStrip.Visibility = Visibility.Visible;
+                BdUpdateStatusBanner.Visibility = Visibility.Collapsed;
+                BdUpdateNotesBox.Visibility = Visibility.Collapsed;
+
+                PanelUpdateProgress.Visibility = Visibility.Visible;
+                TxtUpdateStage.Text = fa ? "در حال آماده‌سازی مسیر امن..." : "Preparing secure download staging...";
+                TxtUpdatePercent.Text = "0%";
+                BarUpdateProgress.IsIndeterminate = false;
+                BarUpdateProgress.Value = 0;
+                TxtUpdateTransferStats.Text = fa ? "در حال اتصال به سرور گیت‌هاب..." : "Connecting to GitHub CDN...";
+
+                BtnUpdateStartDownload.Visibility = Visibility.Collapsed;
+                BtnUpdateRetry.Visibility = Visibility.Collapsed;
+                BtnUpdateClose.Visibility = Visibility.Collapsed;
+                BtnUpdateCancel.Visibility = Visibility.Visible;
+                BtnUpdateModalCloseTop.IsEnabled = false;
+
+                var progress = new Progress<UpdateDownloadProgress>(p =>
+                {
+                    if (_isClosing) return;
+
+                    switch (p.StageCode)
+                    {
+                        case "PREPARING":
+                            BarUpdateProgress.IsIndeterminate = true;
+                            TxtUpdatePercent.Text = "0%";
+                            TxtUpdateStage.Text = fa ? "در حال قفل امنیتی پوشه دانلود..." : "Locking NTFS staging directory...";
+                            break;
+                        case "DOWNLOADING":
+                            BarUpdateProgress.IsIndeterminate = false;
+                            BarUpdateProgress.Value = p.Percent;
+                            TxtUpdatePercent.Text = $"{p.Percent}%";
+                            TxtUpdateStage.Text = fa ? "در حال دانلود فایل نصبی..." : "Downloading installer package...";
+                            string totalStr = p.TotalBytes > 0 ? FormatBytesMb(p.TotalBytes) : "--";
+                            string spdStr = FormatSpeed(p.BytesPerSecond);
+                            TxtUpdateTransferStats.Text = $"{FormatBytesMb(p.BytesReceived)} / {totalStr}  ·  {spdStr}";
+                            break;
+                        case "VERIFYING":
+                            BarUpdateProgress.IsIndeterminate = true;
+                            BarUpdateProgress.Value = 100;
+                            TxtUpdatePercent.Text = "100%";
+                            TxtUpdateStage.Text = fa ? "در حال بررسی امضای PE و هش SHA-256..." : "Verifying Windows PE header & SHA-256 checksum...";
+                            TxtUpdateTransferStats.Text = fa ? "کنترل سلامت و اصالت فایل دانلودشده..." : "Validating cryptographic integrity...";
+                            break;
+                        case "INSTALLING":
+                            BarUpdateProgress.IsIndeterminate = false;
+                            BarUpdateProgress.Value = 100;
+                            TxtUpdatePercent.Text = "100%";
+                            TxtUpdateStage.Text = fa ? "تایید شد! در حال اجرای نصب خودکار..." : "Verified! Launching silent installer...";
+                            TxtUpdateTransferStats.Text = fa ? "برنامه به‌زودی بسته و با نسخه جدید باز می‌شود." : "AionToolPro will restart automatically with the new version.";
+                            break;
+                    }
+                });
+
+                try
+                {
+                    var result = await _service.DownloadAndInstallUpdateAsync(info, progress, token);
+                    if (_isClosing) return;
+
+                    BarUpdateProgress.IsIndeterminate = false;
+                    BtnUpdateCancel.Visibility = Visibility.Collapsed;
+                    BtnUpdateModalCloseTop.IsEnabled = true;
+
+                    if (result.StatusCode == "READY_TO_UPDATE")
+                    {
+                        SetUpdateModalThemeBadge("green", "✓");
+                        TxtUpdateTitle.Text = fa ? "آپدیت آماده نصب است!" : "Installing Update...";
+                        SetUpdateStatusBanner("green", fa
+                            ? "✓ فایل دانلود و با SHA-256 تایید شد. در حال راه‌اندازی مجدد با نسخه جدید..."
+                            : "✓ Package verified! Restarting into the new version now...");
+                        await Task.Delay(750);
                         _forceExit = true;
                         Close();
                         return;
                     }
 
-                    MessageBox.Show(result, "AionToolPro Updater", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    PanelUpdateProgress.Visibility = Visibility.Collapsed;
+
+                    if (result.StatusCode == "CANCELLED")
+                    {
+                        ShowUpdateCancelledUi(fa
+                            ? "دانلود نسخه جدید با موفقیت لغو شد و فایل موقت به‌طور کامل پاکسازی گردید."
+                            : result.Message);
+                        return;
+                    }
+
+                    ShowUpdateErrorUi(result.Message);
                 }
                 finally
                 {
+                    _isUpdateBusy = false;
                     if (!_isClosing)
                     {
-                        ProgressUpdate.Visibility = Visibility.Collapsed;
                         BtnCheckUpdate.IsEnabled = true;
-                        BtnCheckUpdate.Content = fa ? "🔄 بررسی بروزرسانی" : "🔄 Check for Updates";
+                        BtnUpdateModalCloseTop.IsEnabled = true;
                     }
                 }
-            }, "AutoUpdater");
+            }, "AutoUpdater", showErrorDialog: false);
+
+        private void ShowUpdateCancelledUi(string detailMessage)
+        {
+            bool fa = _currentLang == "fa";
+            SetUpdateModalThemeBadge("amber", "⏹");
+            TxtUpdateTitle.Text = fa ? "بروزرسانی لغو شد" : "Update Cancelled";
+            TxtUpdateSubtitle.Text = fa
+                ? "فرآیند دانلود متوقف شد و تغییری در نسخه فعلی اعمال نشد."
+                : "The update process was stopped safely; your current installation is untouched.";
+            SetUpdateStatusBanner("amber", $"⏹ {detailMessage}");
+
+            PanelUpdateProgress.Visibility = Visibility.Collapsed;
+            BdUpdateNotesBox.Visibility = Visibility.Collapsed;
+            BtnUpdateStartDownload.Visibility = Visibility.Collapsed;
+            BtnUpdateCancel.Visibility = Visibility.Collapsed;
+            BtnUpdateRetry.Visibility = Visibility.Visible;
+            BtnUpdateClose.Visibility = Visibility.Visible;
+        }
+
+        private void ShowUpdateErrorUi(string errorMessage)
+        {
+            bool fa = _currentLang == "fa";
+            SetUpdateModalThemeBadge("red", "⚠️");
+            TxtUpdateTitle.Text = fa ? "خطا در بروزرسانی" : "Update Failed";
+            TxtUpdateSubtitle.Text = fa
+                ? "دریافت یا تایید نسخه جدید با مشکل مواجه شد. اتصال اینترنت را بررسی کنید."
+                : "Could not complete the update check or download. See details below.";
+            SetUpdateStatusBanner("red", $"⚠️ {errorMessage}");
+
+            PanelUpdateProgress.Visibility = Visibility.Collapsed;
+            BdUpdateNotesBox.Visibility = Visibility.Collapsed;
+            BtnUpdateStartDownload.Visibility = Visibility.Collapsed;
+            BtnUpdateCancel.Visibility = Visibility.Collapsed;
+            BtnUpdateRetry.Visibility = Visibility.Visible;
+            BtnUpdateClose.Visibility = Visibility.Visible;
+        }
+
+        private void BtnUpdateCancel_Click(object sender, RoutedEventArgs e)
+        {
+            bool fa = _currentLang == "fa";
+            BtnUpdateCancel.IsEnabled = false;
+            TxtUpdateStage.Text = fa ? "در حال لغو و پاکسازی..." : "Cancelling and cleaning up...";
+            try { _updateCts?.Cancel(); } catch { }
+            BtnUpdateCancel.IsEnabled = true;
+        }
+
+        private async void BtnUpdateRetry_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdateBusy) return;
+            if (_pendingUpdateInfo != null && _pendingUpdateInfo.HasUpdate)
+                await StartUpdateDownloadFlowAsync(_pendingUpdateInfo);
+            else
+                await StartUpdateCheckFlowAsync();
+        }
+
+        private void BtnUpdateClose_Click(object sender, RoutedEventArgs e) => HideUpdateModalOverlay();
     }
 }

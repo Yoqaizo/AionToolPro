@@ -4,10 +4,16 @@ All notable changes to **AionToolPro** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.6] - 2026-11-25
+## [0.9.0] - 2026-11-25
 
-### Changed
-- Version 0.8.6 update and stability improvements.
+### Major UI/UX & Graphics Overhaul
+- **Streamlined 4-Button Dashboard & Single-Button Game Booster Toggle:** Simplified the main Dashboard action bar to 4 focused actions: a single **Game Booster** toggle button (Green when idle, turns Red with an active badge when enabled, click again to restore), **Fastest DNS**, **Reset DNS** (resets to automatic DHCP + flushes DNS cache), and **Reset Adaptor**.
+- **Graphical Software Update Center Modal:** Replaced plain `MessageBox` dialogs with a sleek, animated glassmorphic Update Center modal showing live download percentage, transfer speed (`MB/s`), downloaded/total MB, SHA-256 verification status, release notes preview, and dedicated visual states for Up-to-Date, Cancelled, and Error with one-click Cancel and Retry.
+- **Native Windows Glass Mode (Acrylic / Mica Backdrop):** Added `VisualBackdropService` with true Windows 11 DWM Acrylic/Mica blur (`DWMWA_SYSTEMBACKDROP_TYPE`), WPF `CompositionTarget` transparent swapchain & `WindowChrome.GlassFrameThickness` synchronization, native rounded corners (`DWMWA_WINDOW_CORNER_PREFERENCE`), Windows 10 smooth `ACCENT_ENABLE_BLURBEHIND` fallback (zero drag lag), specular `GlassEdgeBrush` borders, plus new **Frost Cyber Glass**, **Aurora Prism Glass**, and **Frosted Acrylic Glass** presets.
+- **Display Calibration Sliders (Transparency, Brightness & Contrast):** Added live custom Studio-Neon sliders in Settings for **Transparency (35%–100%)** (controls frost alpha in Glass Mode and native hardware-accelerated `WS_EX_LAYERED` opacity in Solid Mode), **Brightness (75%–130%)**, and **Contrast (80%–135%)** with a one-click **Reset Visuals** button and full persistence/export.
+- **Silky GPU-Accelerated Transitions & Hover Polish:** Smooth `QuinticEase` page transitions (Fade + Slide + Scale), hover card lifts, and debounced zero-lag display sliders.
+- **Responsive Auto-Reflow Window Engine:** Lowered minimum window bounds cleanly (`840x560`) with startup WorkArea clamping for 1366x768 & 150% DPI laptops, native `SingleBorderWindow` + `WindowChrome` (`CaptionHeight=44`) Aero Snap / Windows 11 Snap Layouts / drag-from-maximize / Auto-Hide Taskbar support, DPI-calibrated maximize frame insets, `WM_DPICHANGED` live resync, and `TaskbarCreated` Tray auto-recovery with automatic adaptive layout on resize — Telemetry Strip switches seamlessly between 4-column and 2x2 grid, Sidebar compacts gracefully, Header pills auto-hide before crowding chrome buttons, Help grid reflows `2 -> 1` column, and Console height adapts on shorter screens.
+- **Modern Categorized Sidebar & Crisp High-DPI Rendering:** Organized sidebar navigation into clean bilingual categories (**Overview**, **Network & DNS**, **System & Security**, **Preferences**) with `ClearType` display text formatting, `UseLayoutRounding`, `HighQuality` bitmap scaling, and custom glowing sliders.
 
 ## [0.8.5] - 2026-11-25
 

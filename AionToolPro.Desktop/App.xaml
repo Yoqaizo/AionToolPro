@@ -3,6 +3,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
+        <!-- Modern Crisp Typography Resources (Windows 11 Variable + Win10 Fallback) -->
+        <FontFamily x:Key="UiFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+        <FontFamily x:Key="MonoFontFamily">Cascadia Mono, Consolas</FontFamily>
+
         <!-- Discord Dark Default Palette -->
         <SolidColorBrush x:Key="WindowCanvasBrush" Color="#0B0E14"/>
         <SolidColorBrush x:Key="SidebarSurfaceBrush" Color="#11151F"/>
@@ -15,6 +19,7 @@
         <SolidColorBrush x:Key="AccentBrush" Color="#5865F2"/>
         <SolidColorBrush x:Key="SecondaryAccentBrush" Color="#38BDF8"/>
         <SolidColorBrush x:Key="AccentSoftBrush" Color="#2E5865F2"/>
+        <SolidColorBrush x:Key="GlassEdgeBrush" Color="#263044"/>
 
         <LinearGradientBrush x:Key="AccentGradientBrush" StartPoint="0,0" EndPoint="1,1">
             <GradientStop Color="#5865F2" Offset="0.0"/>
@@ -27,7 +32,7 @@
         <SolidColorBrush x:Key="DangerRedBrush" Color="#F43F5E"/>
         <SolidColorBrush x:Key="SuccessGreenBrush" Color="#10B981"/>
 
-        <DropShadowEffect x:Key="CardShadowEffect" BlurRadius="18" ShadowDepth="3" Direction="270" Color="#000000" Opacity="0.35"/>
+        <DropShadowEffect x:Key="CardShadowEffect" BlurRadius="16" ShadowDepth="3" Direction="270" Color="#000000" Opacity="0.20"/>
 
         <!-- ==================== DISCORD ULTRA-THIN CUSTOM SCROLLBAR ==================== -->
         <Style x:Key="DiscordScrollBarThumb" TargetType="{x:Type Thumb}">
@@ -99,7 +104,7 @@
         <Style x:Key="NavRadioStyle" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Padding" Value="12,8.5"/>
             <Setter Property="Margin" Value="0,2"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="Medium"/>
@@ -174,6 +179,8 @@
             <Setter Property="Margin" Value="0,0,8,8"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
             <Setter Property="RenderTransform">
                 <Setter.Value>
@@ -184,7 +191,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="BtnBd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <EventTrigger RoutedEvent="MouseEnter">
@@ -226,6 +233,8 @@
             <Setter Property="Padding" Value="13,7"/>
             <Setter Property="Margin" Value="0,0,8,8"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
             <Setter Property="RenderTransform">
                 <Setter.Value>
@@ -236,7 +245,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="BtnBd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <EventTrigger RoutedEvent="MouseEnter">
@@ -268,10 +277,93 @@
             </Setter>
         </Style>
 
+        <!-- Uniform Full-Width DNS Quick Card Button Style -->
+        <Style x:Key="DnsCardBtnStyle" TargetType="Button" BasedOn="{StaticResource SecondaryBtnStyle}">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Height" Value="84"/>
+            <Setter Property="Padding" Value="13,10,13,10"/>
+            <Setter Property="Margin" Value="0,0,10,10"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="BtnBd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <EventTrigger RoutedEvent="MouseEnter">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.015" Duration="0:0:0.12"/>
+                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.015" Duration="0:0:0.12"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="MouseLeave">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.0" Duration="0:0:0.12"/>
+                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.0" Duration="0:0:0.12"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BtnBd" Property="Background" Value="{DynamicResource CardHoverBrush}"/>
+                                <Setter TargetName="BtnBd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="BtnBd" Property="Opacity" Value="0.88"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Danger Button Style -->
         <Style x:Key="DangerBtnStyle" TargetType="Button" BasedOn="{StaticResource PrimaryBtnStyle}">
             <Setter Property="Background" Value="{DynamicResource DangerRedBrush}"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+
+        <!-- Success / Active-Ready Green Button Style -->
+        <Style x:Key="SuccessBtnStyle" TargetType="Button" BasedOn="{StaticResource PrimaryBtnStyle}">
+            <Setter Property="Background" Value="{DynamicResource SuccessGreenBrush}"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+        </Style>
+
+        <!-- Modern Rounded Gradient ProgressBar Style -->
+        <Style x:Key="ModernProgressBarStyle" TargetType="{x:Type ProgressBar}">
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="Background" Value="{DynamicResource InputSurfaceBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentGradientBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderHairlineBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ProgressBar}">
+                        <Grid x:Name="TemplateRoot" SnapsToDevicePixels="True">
+                            <Border x:Name="PART_Track"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6"/>
+                            <Border x:Name="PART_Indicator"
+                                    HorizontalAlignment="Left"
+                                    Background="{TemplateBinding Foreground}"
+                                    CornerRadius="6"
+                                    Margin="1"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- Window TitleBar Chrome Button -->
@@ -435,7 +527,7 @@
             <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource BorderHairlineBrush}"/>
             <Setter Property="HeadersVisibility" Value="Column"/>
             <Setter Property="RowHeight" Value="32"/>
-            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontFamily" Value="{StaticResource MonoFontFamily}"/>
             <Setter Property="FontSize" Value="12"/>
         </Style>
         <Style TargetType="DataGridColumnHeader">
@@ -447,19 +539,52 @@
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
         </Style>
 
+        <!-- Sidebar Category Label -->
+        <Style x:Key="NavCategoryHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="9.5"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+            <Setter Property="Opacity" Value="0.72"/>
+            <Setter Property="Margin" Value="8,10,8,3"/>
+        </Style>
+
+        <!-- Studio-Neon Glassmorphic Telemetry Card -->
         <Style x:Key="TelemetryPingCardStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource CardSurfaceBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderHairlineBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource GlassEdgeBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="11"/>
+            <Setter Property="CornerRadius" Value="12"/>
             <Setter Property="Padding" Value="14,11"/>
-            <Setter Property="Margin" Value="0,0,10,0"/>
+            <Setter Property="Margin" Value="0,0,10,8"/>
             <Setter Property="Effect" Value="{StaticResource CardShadowEffect}"/>
         </Style>
 
-                <Style x:Key="ClickableTelemetryPingCardStyle" TargetType="Border" BasedOn="{StaticResource TelemetryPingCardStyle}">
+        <!-- Interactive Clickable Telemetry Card with Smooth Scale Lift -->
+        <Style x:Key="ClickableTelemetryPingCardStyle" TargetType="Border" BasedOn="{StaticResource TelemetryPingCardStyle}">
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                </Setter.Value>
+            </Setter>
             <Style.Triggers>
+                <EventTrigger RoutedEvent="MouseEnter">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.018" Duration="0:0:0.14"/>
+                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.018" Duration="0:0:0.14"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+                <EventTrigger RoutedEvent="MouseLeave">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1.0" Duration="0:0:0.14"/>
+                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1.0" Duration="0:0:0.14"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{DynamicResource CardHoverBrush}"/>
                     <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
@@ -467,14 +592,78 @@
             </Style.Triggers>
         </Style>
 
+        <!-- Elevated Glassmorphic Section Card -->
         <Style x:Key="SectionCardStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource CardSurfaceBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderHairlineBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource GlassEdgeBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="11"/>
+            <Setter Property="CornerRadius" Value="12"/>
             <Setter Property="Padding" Value="16"/>
             <Setter Property="Margin" Value="0,0,0,12"/>
             <Setter Property="Effect" Value="{StaticResource CardShadowEffect}"/>
+        </Style>
+
+        <!-- Modern Glowing Studio-Neon Slider Style -->
+        <Style TargetType="{x:Type Slider}">
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="IsMoveToPointEnabled" Value="True"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Slider}">
+                        <Grid VerticalAlignment="Center">
+                            <Border Height="6" CornerRadius="3"
+                                    Background="{DynamicResource InputSurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderHairlineBrush}"
+                                    BorderThickness="1" VerticalAlignment="Center"/>
+                            <Track x:Name="PART_Track" VerticalAlignment="Center">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Height="6" CornerRadius="3,0,0,3" Background="{DynamicResource AccentGradientBrush}"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Height="6" Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="16" Height="16" Focusable="False">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="ThumbCircle" Width="16" Height="16" CornerRadius="8"
+                                                        Background="#FFFFFF"
+                                                        BorderBrush="{DynamicResource AccentBrush}"
+                                                        BorderThickness="2.5">
+                                                    <Border.Effect>
+                                                        <DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="#000000" Opacity="0.45"/>
+                                                    </Border.Effect>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ThumbCircle" Property="BorderBrush" Value="{DynamicResource SecondaryAccentBrush}"/>
+                                                        <Setter TargetName="ThumbCircle" Property="BorderThickness" Value="3"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     
         <!-- Modern Custom CheckBox Style -->
