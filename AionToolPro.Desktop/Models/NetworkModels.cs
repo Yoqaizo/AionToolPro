@@ -185,7 +185,8 @@ namespace AionToolPro.Desktop.Models
         string LanguageCode = "en",
         int SurfacePaletteId = 0,
         bool MinimizeToTray = false,
-        string GlobalPingTarget = "1.1.1.1");
+        string GlobalPingTarget = "1.1.1.1",
+        string IntranetPingTarget = "www.arvancloud.ir");
 
     public sealed record CustomDnsProfile(
         string Name,

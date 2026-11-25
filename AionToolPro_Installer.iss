@@ -1,6 +1,6 @@
 ; Inno Setup 6 & 7 Script for AionToolPro
 #ifndef AppVer
-  #define AppVer "0.8.4"
+  #define AppVer "0.8.6"
 #endif
 
 [Setup]

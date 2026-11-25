@@ -4,10 +4,27 @@ All notable changes to **AionToolPro** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] - 2026-11-25
+
+### Changed
+- Version 0.8.6 update and stability improvements.
+
+## [0.8.5] - 2026-11-25
+
+### Added & Improved
+- **Interactive Click-to-Switch Live Ping Cards:** Click directly on the top **Global Ping** card to cycle between `1.1.1.1` (Cloudflare), `8.8.8.8` (Google), `9.9.9.9` (Quad9), and `4.2.2.4` (Level3), or click the **Intranet Ping** card to cycle between `www.arvancloud.ir`, `www.salatingames.ir`, `parsvds.com`, and `iran.ir` — with instant forced re-probe and automatic persistence in settings & export/import bundles.
+- **Redesigned Compact Settings UI:** Rebuilt Settings into a streamlined 2-card layout, removed duplicate Theme/Surface/Ping dropdowns, and added live dynamic resource-bound border highlights on active theme and background swatches.
+- **Full Bilingual Help (English LTR + Persian RTL):** Translated all 6 visual Help guide cards, titles, and descriptions into complete Persian with proper RTL layout switching.
+
+### Fixed
+- **Instant Ping Re-Probe on Target Switch:** Added `_pingRescanRequested` queueing in `RefreshPingTelemetryAsync` so switching ping servers while a probe is in flight immediately runs a fresh measurement without waiting for the next timer tick, clearing stale jitter/min/avg/max readouts immediately.
+- **Dynamic Theme Brush Binding:** Switched runtime DNS card foregrounds and active swatch borders from static `FindResource` lookups to `SetResourceReference` so Light/Dark mode and theme changes always stay synchronized.
+- **Cold-Start Intranet DNS Resolve Timeout:** Increased `ResolveHostCachedAsync` timeout from `1200ms` to `2000ms` to eliminate first-probe false timeouts when switching intranet domains.
+
 ## [0.8.4] - 2026-11-25
 
 ### Changed & Improved
-- **System-Grade Ping & Packet Loss Engine:** Replaced rate-limited `4.2.2.4` default with Cloudflare `1.1.1.1` (plus selectable Global Ping Server in Settings: `1.1.1.1`, `8.8.8.8`, `9.9.9.9`, `4.2.2.4`). Upgraded ICMP probes to standard Windows 32-byte payload, `TTL=128`, `2000ms` timeout, and removed hidden ICMP retries so packet loss matches real `ping.exe` measurements.
+- **System-Grade Ping & Packet Loss Engine:** Upgraded ICMP probes to standard Windows 32-byte payload, `TTL=128`, `2000ms` timeout, and removed hidden ICMP retries so packet loss matches real `ping.exe` measurements.
 - **Honest 40-Sample Sliding-Window Loss & RFC 3550 Jitter:** Removed false first-drop masking in `PingChannelTracker`, replaced instant two-sample jitter with RFC 3550 smoothed jitter, and replaced misleading header `Loss In / Out` (`Math.Min`) with real Global `Loss %` and live NIC hardware/driver drops (`Errors + Discards`).
 - **Clean ICMP vs. TCP Fallback Separation:** Detects ICMP-blocked networks (e.g., VPN TUN mode or strict router firewalls) cleanly with a `TCP ONLY` badge instead of false `OFFLINE` alerts, and treats active router `TCP RST` (`ConnectionRefused`) responses as alive with accurate LAN RTT.
 - **Decoupled 1s NIC Telemetry & Background Tray Updates:** Separated the 1-second NIC speedometer/stats timer from the 1.5-second ping loop so download/upload speeds never freeze during ping timeouts, merged adapter + gateway polling into one unified snapshot, and added lightweight Tray tooltip ping updates when minimized.
@@ -30,7 +47,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 - Fixed IPv6 DNS sticking/leaking when switching from dual-stack resolvers (e.g., Cloudflare/Google) to IPv4-only anti-sanction resolvers (e.g., Shecan/Electro).
-- Fixed `.NET 8` OEM codepage registration in `ProcessRunner` so non-English Windows `netsh` outputs decode cleanly.
 - Fixed `AbandonedMutexException` handling, external `WM_CLOSE`/`SessionEnding` clean shutdown when Minimize-to-Tray is enabled, and added Win32 `MessageBoxW` fatal crash fallback with `InnerException` logging.
 - Protected `%TEMP%\.net` single-file extraction cache and symbolic links (`ReparsePoint`) during Temp cleanup and elevated Hosts operations.
 - Fixed `RunSpeedTestAsync` wall-clock timeout so stalled streams cancel cleanly after 10 seconds.

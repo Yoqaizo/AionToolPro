@@ -33,7 +33,24 @@ namespace AionToolPro.Desktop
         private string _selectedInterface = "Ethernet";
         private string _detectedRouterIp = string.Empty;
         private string _lastDetectedPrimaryDns = string.Empty;
+        private static readonly (string Host, string LabelEn, string LabelFa)[] GlobalPingTargets =
+        {
+            ("1.1.1.1", "1.1.1.1", "1.1.1.1"),
+            ("8.8.8.8", "8.8.8.8", "8.8.8.8"),
+            ("9.9.9.9", "9.9.9.9", "9.9.9.9"),
+            ("4.2.2.4", "4.2.2.4", "4.2.2.4")
+        };
+
+        private static readonly (string Host, string LabelEn, string LabelFa)[] IntranetPingTargets =
+        {
+            ("www.arvancloud.ir",   "ARVAN",   "آروان"),
+            ("www.salatingames.ir", "SALATIN", "سلاطین‌گیم"),
+            ("parsvds.com",         "PARSVDS", "پارس‌وی‌دی‌اس"),
+            ("iran.ir",             "IRAN.IR", "ایران")
+        };
+
         private string _globalPingTarget = "1.1.1.1";
+        private string _intranetPingTarget = "www.arvancloud.ir";
         private string _currentLang = "en";
         private ThemeDefinition _currentTheme = AioCatalog.Themes[0];
         private AppSurfacePalette _currentSurface = AioCatalog.SurfacePalettes[0];
@@ -45,6 +62,7 @@ namespace AionToolPro.Desktop
         private bool _forceExit;
         private bool _isNicRunning;
         private bool _isPingRunning;
+        private bool _pingRescanRequested;
         private bool _autoRefreshAppMonitor;
         private int _pingTickCounter;
 
@@ -62,6 +80,8 @@ namespace AionToolPro.Desktop
         private readonly PingChannelTracker _routerPingTracker = new();
 
         private readonly Dictionary<string, (Border Pill, TextBlock PillText)> _dnsCardBadges = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<int, Button> _themeSwatchButtons = new();
+        private readonly Dictionary<int, Button> _surfaceSwatchButtons = new();
 
         private static Color ParseColor(string hex) => ColorConverter.ConvertFromString(hex) is Color c ? c : Colors.White;
 
@@ -93,7 +113,6 @@ namespace AionToolPro.Desktop
 
             PopulateCatalogControls();
             ComboLanguage.SelectedIndex = 0;
-            ComboGlobalPingTarget.SelectedIndex = 0;
 
             _consoleFlushTimer.Tick += (_, _) => FlushConsoleQueue();
             _consoleFlushTimer.Start();
@@ -309,14 +328,9 @@ namespace AionToolPro.Desktop
             ComboBlocklists.ItemsSource = AioCatalog.Blocklists;
             ComboBlocklists.SelectedIndex = 0;
 
-            ComboThemes.ItemsSource = AioCatalog.Themes;
-            ComboThemes.SelectedIndex = 0;
-
-            ComboSurfacePalettes.ItemsSource = AioCatalog.SurfacePalettes;
-            ComboSurfacePalettes.SelectedIndex = 0;
-
             BuildThemeSwatchCards();
             BuildSurfaceSwatchCards();
+            UpdateSwatchSelectionHighlights();
         }
 
         private void RefreshDnsCatalogUi(string? searchFilter = null)
@@ -357,9 +371,9 @@ namespace AionToolPro.Desktop
                 {
                     Text = p.Name,
                     FontSize = 13,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = (Brush)FindResource("PrimaryTextBrush")
+                    FontWeight = FontWeights.Bold
                 };
+                titleTxt.SetResourceReference(TextBlock.ForegroundProperty, "PrimaryTextBrush");
 
                 var pillText = new TextBlock
                 {
@@ -391,17 +405,17 @@ namespace AionToolPro.Desktop
                     FontFamily = new FontFamily("Consolas"),
                     FontSize = 11.5,
                     FontWeight = FontWeights.SemiBold,
-                    Foreground = (Brush)FindResource("AccentBrush"),
                     Margin = new Thickness(0, 5, 0, 2)
                 };
+                ipTxt.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
 
                 var descTxt = new TextBlock
                 {
                     Text = p.Description,
                     FontSize = 10.5,
-                    Foreground = (Brush)FindResource("MutedTextBrush"),
                     TextTrimming = TextTrimming.CharacterEllipsis
                 };
+                descTxt.SetResourceReference(TextBlock.ForegroundProperty, "MutedTextBrush");
 
                 cardStack.Children.Add(topRow);
                 cardStack.Children.Add(ipTxt);
@@ -468,6 +482,8 @@ namespace AionToolPro.Desktop
         private void BuildThemeSwatchCards()
         {
             ThemeSwatchesWrapPanel.Children.Clear();
+            _themeSwatchButtons.Clear();
+
             foreach (var t in AioCatalog.Themes)
             {
                 var c1 = ParseColor(t.AccentHex);
@@ -478,63 +494,15 @@ namespace AionToolPro.Desktop
                 var sp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, FlowDirection = FlowDirection.LeftToRight };
                 var swatch = new Border
                 {
-                    Width = 16,
-                    Height = 16,
-                    CornerRadius = new CornerRadius(8),
+                    Width = 14,
+                    Height = 14,
+                    CornerRadius = new CornerRadius(7),
                     Background = grad,
-                    Margin = new Thickness(0, 0, 8, 0)
+                    Margin = new Thickness(0, 0, 7, 0)
                 };
                 var label = new TextBlock
                 {
                     Text = t.Name,
-                    FontSize = 12,
-                    FontWeight = FontWeights.SemiBold,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                sp.Children.Add(swatch);
-                sp.Children.Add(label);
-
-                var btn = new Button
-                {
-                    Content = sp,
-                    Style = (Style)FindResource("SecondaryBtnStyle"),
-                    Tag = t,
-                    Padding = new Thickness(12, 7, 12, 7)
-                };
-                btn.Click += (s, _) =>
-                {
-                    if (s is Button b && b.Tag is ThemeDefinition selectedTheme)
-                        ComboThemes.SelectedItem = selectedTheme;
-                };
-                ThemeSwatchesWrapPanel.Children.Add(btn);
-            }
-        }
-
-        private void BuildSurfaceSwatchCards()
-        {
-            SurfaceSwatchesWrapPanel.Children.Clear();
-            foreach (var s in AioCatalog.SurfacePalettes)
-            {
-                var c1 = ParseColor(s.CanvasHex);
-                var c2 = ParseColor(s.CardHex);
-                var borderCol = ParseColor(s.BorderHex);
-                var grad = new LinearGradientBrush(c1, c2, new Point(0, 0), new Point(1, 1));
-                grad.Freeze();
-
-                var sp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, FlowDirection = FlowDirection.LeftToRight };
-                var swatch = new Border
-                {
-                    Width = 16,
-                    Height = 16,
-                    CornerRadius = new CornerRadius(5),
-                    Background = grad,
-                    BorderBrush = Freeze(new SolidColorBrush(borderCol)),
-                    BorderThickness = new Thickness(1),
-                    Margin = new Thickness(0, 0, 8, 0)
-                };
-                var label = new TextBlock
-                {
-                    Text = s.Name,
                     FontSize = 11.5,
                     FontWeight = FontWeights.SemiBold,
                     VerticalAlignment = VerticalAlignment.Center
@@ -546,16 +514,104 @@ namespace AionToolPro.Desktop
                 {
                     Content = sp,
                     Style = (Style)FindResource("SecondaryBtnStyle"),
+                    Tag = t,
+                    Padding = new Thickness(10, 5, 10, 5),
+                    Margin = new Thickness(0, 0, 6, 6),
+                    ToolTip = t.Subtitle
+                };
+                btn.Click += (s, _) =>
+                {
+                    if (s is Button b && b.Tag is ThemeDefinition selectedTheme)
+                        SelectTheme(selectedTheme);
+                };
+                _themeSwatchButtons[t.Id] = btn;
+                ThemeSwatchesWrapPanel.Children.Add(btn);
+            }
+        }
+
+        private void BuildSurfaceSwatchCards()
+        {
+            SurfaceSwatchesWrapPanel.Children.Clear();
+            _surfaceSwatchButtons.Clear();
+
+            foreach (var s in AioCatalog.SurfacePalettes)
+            {
+                var c1 = ParseColor(s.CanvasHex);
+                var c2 = ParseColor(s.CardHex);
+                var borderCol = ParseColor(s.BorderHex);
+                var grad = new LinearGradientBrush(c1, c2, new Point(0, 0), new Point(1, 1));
+                grad.Freeze();
+
+                var sp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, FlowDirection = FlowDirection.LeftToRight };
+                var swatch = new Border
+                {
+                    Width = 14,
+                    Height = 14,
+                    CornerRadius = new CornerRadius(4),
+                    Background = grad,
+                    BorderBrush = Freeze(new SolidColorBrush(borderCol)),
+                    BorderThickness = new Thickness(1),
+                    Margin = new Thickness(0, 0, 7, 0)
+                };
+                var label = new TextBlock
+                {
+                    Text = s.Name,
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                sp.Children.Add(swatch);
+                sp.Children.Add(label);
+
+                var btn = new Button
+                {
+                    Content = sp,
+                    Style = (Style)FindResource("SecondaryBtnStyle"),
                     Tag = s,
-                    Padding = new Thickness(11, 6, 11, 6)
+                    Padding = new Thickness(9, 5, 9, 5),
+                    Margin = new Thickness(0, 0, 6, 6)
                 };
                 btn.Click += (sender, _) =>
                 {
                     if (sender is Button b && b.Tag is AppSurfacePalette selectedSurface)
-                        ComboSurfacePalettes.SelectedItem = selectedSurface;
+                        SelectSurface(selectedSurface);
                 };
+                _surfaceSwatchButtons[s.Id] = btn;
                 SurfaceSwatchesWrapPanel.Children.Add(btn);
             }
+        }
+
+        private void UpdateSwatchSelectionHighlights()
+        {
+            foreach (var kv in _themeSwatchButtons)
+            {
+                bool active = kv.Key == _currentTheme.Id;
+                kv.Value.SetResourceReference(BorderBrushProperty, active ? "AccentBrush" : "BorderHairlineBrush");
+                kv.Value.BorderThickness = active ? new Thickness(2) : new Thickness(1);
+            }
+
+            foreach (var kv in _surfaceSwatchButtons)
+            {
+                bool active = kv.Key == _currentSurface.Id;
+                kv.Value.SetResourceReference(BorderBrushProperty, active ? "AccentBrush" : "BorderHairlineBrush");
+                kv.Value.BorderThickness = active ? new Thickness(2) : new Thickness(1);
+            }
+        }
+
+        private void SelectTheme(ThemeDefinition theme)
+        {
+            _currentTheme = theme;
+            ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
+            UpdateSwatchSelectionHighlights();
+            if (_isInitialized) SaveCurrentSettings();
+        }
+
+        private void SelectSurface(AppSurfacePalette surface)
+        {
+            _currentSurface = surface;
+            ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
+            UpdateSwatchSelectionHighlights();
+            if (_isInitialized) SaveCurrentSettings();
         }
 
         private void LoadPersistedSettingsIfAvailable()
@@ -575,18 +631,17 @@ namespace AionToolPro.Desktop
             _currentLang = saved.LanguageCode == "fa" ? "fa" : "en";
             ComboLanguage.SelectedIndex = _currentLang == "fa" ? 1 : 0;
 
-            _globalPingTarget = AioNetworkService.ValidateHostOrIp(saved.GlobalPingTarget)
+            _globalPingTarget = GlobalPingTargets.Any(g => g.Host.Equals(saved.GlobalPingTarget, StringComparison.OrdinalIgnoreCase))
                 ? saved.GlobalPingTarget.Trim()
-                : "1.1.1.1";
-            SelectGlobalPingTargetInCombo(_globalPingTarget);
+                : GlobalPingTargets[0].Host;
 
-            var themeObj = AioCatalog.Themes.FirstOrDefault(t => t.Id == saved.ThemeId) ?? AioCatalog.Themes[0];
-            _currentTheme = themeObj;
-            ComboThemes.SelectedItem = themeObj;
+            _intranetPingTarget = IntranetPingTargets.Any(i => i.Host.Equals(saved.IntranetPingTarget, StringComparison.OrdinalIgnoreCase))
+                ? saved.IntranetPingTarget.Trim()
+                : IntranetPingTargets[0].Host;
 
-            var surfaceObj = AioCatalog.SurfacePalettes.FirstOrDefault(s => s.Id == saved.SurfacePaletteId) ?? AioCatalog.SurfacePalettes[0];
-            _currentSurface = surfaceObj;
-            ComboSurfacePalettes.SelectedItem = surfaceObj;
+            _currentTheme = AioCatalog.Themes.FirstOrDefault(t => t.Id == saved.ThemeId) ?? AioCatalog.Themes[0];
+            _currentSurface = AioCatalog.SurfacePalettes.FirstOrDefault(s => s.Id == saved.SurfacePaletteId) ?? AioCatalog.SurfacePalettes[0];
+            UpdateSwatchSelectionHighlights();
 
             if (!string.IsNullOrWhiteSpace(saved.InterfaceName) &&
                 InterfaceCombo.ItemsSource is IEnumerable<NetworkAdaptorItem> list)
@@ -600,17 +655,26 @@ namespace AionToolPro.Desktop
             }
         }
 
-        private void SelectGlobalPingTargetInCombo(string target)
+        private string GetIntranetShortLabel(bool fa)
         {
-            foreach (var obj in ComboGlobalPingTarget.Items)
-            {
-                if (obj is ComboBoxItem cbi && cbi.Tag is string tag && tag.Equals(target, StringComparison.OrdinalIgnoreCase))
-                {
-                    ComboGlobalPingTarget.SelectedItem = cbi;
-                    return;
-                }
-            }
-            ComboGlobalPingTarget.SelectedIndex = 0;
+            var entry = IntranetPingTargets.FirstOrDefault(x => x.Host.Equals(_intranetPingTarget, StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrEmpty(entry.Host))
+                return fa ? "آروان" : "ARVAN";
+            return fa ? entry.LabelFa : entry.LabelEn;
+        }
+
+        private void UpdatePingCardHeaders()
+        {
+            bool fa = _currentLang == "fa";
+            string intraLbl = GetIntranetShortLabel(fa);
+            LblPingCard1.Text = fa ? $"جهانی · {_globalPingTarget} ↻" : $"GLOBAL · {_globalPingTarget} ↻";
+            LblPingCard2.Text = fa ? $"داخلی · {intraLbl} ↻" : $"INTRANET · {intraLbl} ↻";
+            CardGlobalPing.ToolTip = fa
+                ? $"سرور فعلی: {_globalPingTarget} — برای تغییر منبع پینگ جهانی کلیک کنید (1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 4.2.2.4)"
+                : $"Active: {_globalPingTarget} — Click to switch Global ping server (1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 4.2.2.4)";
+            CardIntranetPing.ToolTip = fa
+                ? $"سرور فعلی: {_intranetPingTarget} — برای تغییر منبع پینگ داخلی کلیک کنید (آروان / سلاطین‌گیم / پارس‌وی‌دی‌اس / ایران)"
+                : $"Active: {_intranetPingTarget} — Click to switch Intranet ping server (arvancloud.ir / salatingames.ir / parsvds.com / iran.ir)";
         }
 
         private void ResetLiveTelemetryBaselines()
@@ -636,7 +700,8 @@ namespace AionToolPro.Desktop
                 _currentLang,
                 _currentSurface.Id,
                 ChkMinimizeToTray.IsChecked == true,
-                _globalPingTarget);
+                _globalPingTarget,
+                _intranetPingTarget);
         }
 
         private async Task LoadNetworkInterfacesAsync(bool preserveSelection = false)
@@ -683,8 +748,7 @@ namespace AionToolPro.Desktop
             NavSettings.Content    = fa ? "🎨  تنظیمات" : "🎨  Settings";
             NavHelp.Content        = fa ? "❓  راهنما" : "❓  Help";
 
-            LblPingCard1.Text      = fa ? $"پینگ جهانی · {_globalPingTarget}" : $"GLOBAL · {_globalPingTarget}";
-            LblPingCard2.Text      = fa ? "اینترانت · آروان" : "INTRANET · ARVAN";
+            UpdatePingCardHeaders();
             LblActiveDnsCard.Text  = fa ? "دی‌ان‌اس فعال" : "ACTIVE DNS";
 
             LblDashStatusHeader.Text      = fa ? "وضعیت لحظه‌ای شبکه سیستم" : "SYSTEM NETWORK STATUS";
@@ -788,25 +852,58 @@ namespace AionToolPro.Desktop
             LblMaintUpdateTitle.Text      = fa ? "ریست کش آپدیت ویندوز" : "Windows Update Cache Reset";
             BtnWindowsUpdateReset.Content = fa ? "🔄 ریست سرویس آپدیت" : "🔄 Reset Windows Update";
 
-            LblAppUpdateTitle.Text      = fa ? "بروزرسانی خودکار و پشتیبان تنظیمات" : "Software Update & Settings Backup";
+            LblAppUpdateTitle.Text      = fa ? "بروزرسانی و پشتیبان تنظیمات" : "Updates & Settings Backup";
             BtnCheckUpdate.Content      = fa ? "🔄 بررسی بروزرسانی" : "🔄 Check for Updates";
-            BtnExportSettings.Content   = fa ? "📤 خروجی تنظیمات" : "📤 Export Settings";
-            BtnImportSettings.Content   = fa ? "📥 ورود تنظیمات" : "📥 Import Settings";
+            BtnExportSettings.Content   = fa ? "📤 خروجی" : "📤 Export";
+            BtnImportSettings.Content   = fa ? "📥 ورود" : "📥 Import";
 
-            LblThemeStudioTitle.Text    = fa ? "پوسته، رنگ پس‌زمینه کل برنامه و زبان" : "Themes, Full App Color & Preferences";
-            LblAppBgPaletteTitle.Text   = fa ? "تغییر رنگ کل پس‌زمینه برنامه:" : "Full App Background Color:";
-            LblThemeSelect.Text         = fa ? "پوسته:" : "Theme:";
-            LblSurfaceSelect.Text       = fa ? "رنگ برنامه:" : "App Color:";
+            LblThemeStudioTitle.Text    = fa ? "ظاهر و تنظیمات برنامه" : "Appearance & Preferences";
+            LblThemeSelect.Text         = fa ? "تم رنگی" : "Accent Theme";
+            LblAppBgPaletteTitle.Text   = fa ? "رنگ پس‌زمینه برنامه" : "Background Surface";
             LblLanguageSelect.Text      = fa ? "زبان:" : "Language:";
-            LblPingTargetSelect.Text    = fa ? "سرور پینگ:" : "Ping Server:";
             ChkDarkMode.Content         = fa ? "حالت تاریک" : "Dark Mode";
             ChkRememberSettings.Content = fa ? "ذخیره تنظیمات" : "Remember Settings";
             ChkEnableLogging.Content    = fa ? "ثبت گزارش" : "Save Action Log";
             ChkMinimizeToTray.Content   = fa ? "کوچک شدن در سینی سیستم (Tray)" : "Minimize to System Tray";
             ChkStartWithWindows.Content = fa ? "اجرای خودکار با ویندوز" : "Start with Windows";
             LblActionLogTitle.Text      = fa ? "گزارش عملکرد" : "Action Log";
-            BtnViewLog.Content          = fa ? "بروزرسانی گزارش" : "Refresh Log";
-            BtnClearLog.Content         = fa ? "پاکسازی گزارش" : "Clear Log";
+            BtnViewLog.Content          = fa ? "بروزرسانی" : "Refresh";
+            BtnClearLog.Content         = fa ? "پاکسازی" : "Clear";
+
+            // Complete Bilingual Help (English LTR + Full Persian RTL)
+            ViewHelp.FlowDirection  = fa ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+            LblHelpTitle.Text       = fa ? "راهنمای کامل امکانات و بخش‌های AionToolPro" : "AionToolPro — Complete Feature & Button Guide";
+            LblHelpSubtitle.Text    = fa ? "معرفی کامل نشانگرها، کارت‌های پینگ زنده، ابزارهای شبکه و تنظیمات برنامه." : "Visual reference explaining every indicator, button, and tool inside AionToolPro.";
+
+            LblHelpCard1Title.Text  = fa ? "⚡ چراغ وضعیت و کارت شبکه" : "⚡ Status Light & Network Adaptor";
+            TxtHelpCard1Body.Text   = fa
+                ? "• چراغ وضعیت بالا: سبز = اینترنت پایدار، نارنجی = پکت لاست بالا (بیش از ۱۰٪)، قرمز = قطع اتصال.\n• نشانگر کارت شبکه: اسکن خودکار آداپتورهای واقعی (سبز = متصل، نارنجی = قطع، قرمز = غیرفعال).\n• سرعت‌سنج مستقل ۱ ثانیه‌ای: نمایش لحظه‌ای سرعت دانلود/آپلود، حجم مصرفی و خطاهای سخت‌افزاری کارت شبکه بدون فریز شدن هنگام تایم‌اوت."
+                : "• Status LED: Green = healthy internet, Amber = high packet loss (>=10%), Red = offline.\n• Network Adaptor Dots: Scans real physical adapters. Green = Connected, Orange = Disconnected, Red = Disabled.\n• Live Sync & Speedometer: Independent 1-second NIC stats (⬇/⬆ speed, Rx/Tx, NIC drops) never freeze during ping timeouts.";
+
+            LblHelpCard2Title.Text  = fa ? "📊 مانیتور پینگ زنده (قابل کلیک)" : "📊 Interactive Live Ping Monitors";
+            TxtHelpCard2Body.Text   = fa
+                ? "• تغییر پینگ جهانی با کلیک: روی کارت پینگ جهانی کلیک کنید تا بین 1.1.1.1 (کلودفلر)، 8.8.8.8 (گوگل)، 9.9.9.9 و 4.2.2.4 جابه‌جا شود.\n• تغییر پینگ داخلی با کلیک: روی کارت پینگ داخلی کلیک کنید تا بین arvancloud.ir، salatingames.ir، parsvds.com و iran.ir جابه‌جا شود.\n• دقت سیستمی: ارسال بسته استاندارد ۳۲ بایتی ویندوز (TTL=128)، جیتر استاندارد RFC 3550، پکت لاست واقعی ۴۰ بسته و حالت خودکار TCP ONLY در صورت مسدود بودن ICMP."
+                : "• Click Global Card to Switch Server: Cycles between 1.1.1.1 (Cloudflare), 8.8.8.8 (Google), 9.9.9.9 (Quad9), and 4.2.2.4.\n• Click Intranet Card to Switch Server: Cycles between arvancloud.ir, salatingames.ir, parsvds.com, and iran.ir.\n• System-Grade Accuracy: Standard 32-byte TTL=128 ICMP, RFC 3550 jitter, honest 40-packet loss, and automatic TCP ONLY fallback if ICMP is blocked.";
+
+            LblHelpCard3Title.Text  = fa ? "🌐 استودیو دی‌ان‌اس، پروفایل شخصی و DoH" : "🌐 DNS Studio, Profiles & DoH";
+            TxtHelpCard3Body.Text   = fa
+                ? "• تغییر سریع و جستجو: با یک کلیک روی هر کارت DNS در داشبورد، دی‌ان‌اس اعمال و کش پاک می‌شود؛ برای جلوگیری از نشت، IPv6 روی DNSهای تحریم‌شکن خودکار ریست می‌شود.\n• پروفایل شخصی و بنچمارک واقعی: دی‌ان‌اس‌های دلخواه خود را ذخیره کنید و همه سرورها را با کوئری واقعی UDP پورت ۵۳ تست سرعت بگیرید.\n• دی‌ان‌اس امن (DoH): فعال‌سازی رمزنگاری بومی ویندوز ۱۱ برای کلودفلر، گوگل و کواد۹ همراه با بکاپ و بازگردانی."
+                : "• Quick DNS & Search: Click any DNS card on the Dashboard or filter by name/IP. Automatically resets IPv6 DNS to prevent leaks on IPv4-only anti-sanction DNS.\n• Custom Profiles & UDP/53 Benchmark: Save your own DNS profiles and benchmark all resolvers using real UDP port 53 queries.\n• Windows 11 DoH: Enables encrypted DNS-over-HTTPS (udpfallback=yes) with safe backup/restore.";
+
+            LblHelpCard4Title.Text  = fa ? "📡 بررسی شبکه، STUN NAT و مانیتور برنامه‌ها" : "📡 Diagnostics, STUN NAT & App Monitor";
+            TxtHelpCard4Body.Text   = fa
+                ? "• تست STUN و سرعت: تشخیص دقیق نوع NAT (Open / Cone / Symmetric) و CGNAT با پروتکل RFC 5389، تست سرعت دانلود دوکاناله کلودفلر و پینگ سرورهای بازی.\n• مانیتور اتصالات (IPv4/IPv6): مشاهده برنامه‌های متصل با فیلتر جستجو، محافظت از پروسه‌های حیاتی ویندوز و مسدودسازی/آزادسازی اینترنت برنامه‌ها در فایروال.\n• ابزارهای زنده: مانیتور پینگ، ردیابی مسیر (Traceroute) و بررسی باز بودن پورت TCP با قابلیت توقف لحظه‌ای."
+                : "• STUN NAT & Speed Test: Dual-server RFC 5389 UDP STUN detects Open/Cone/Symmetric NAT & CGNAT; 2-stream Cloudflare speed test & Game Server Pings.\n• Active Connections (IPv4/IPv6): Live socket monitor with search, protected process guard, and SHA-256 hashed Windows Firewall block/unblock.\n• Ping Monitor, Traceroute & Port Check: Live cancellable diagnostics.";
+
+            LblHelpCard5Title.Text  = fa ? "📶 مدیریت وای‌فای و فایل هاست (Hosts)" : "📶 Wi-Fi Manager & Atomic Hosts";
+            TxtHelpCard5Body.Text   = fa
+                ? "• پروفایل‌های وای‌فای: استخراج ایمن و مستقل از زبان ویندوز؛ رمزها به صورت پیش‌فرض مخفی هستند و می‌توانید آن‌ها را مشاهده، کپی یا شبکه را فراموش کنید.\n• فایل هاست و مسدودساز تبلیغات: نوشتن اتمیک و ایمن بدون BOM همراه با بکاپ خودکار تاریخ‌دار برای لیست‌های مسدودساز تبلیغات، بدافزار و تیم‌اسپیک."
+                : "• Wi-Fi Profiles: Language-independent extraction with passwords masked by default — reveal, copy, or forget any saved network safely.\n• Hosts Blocklists: Atomic UTF-8 (no BOM) writes with automatic timestamped backups, multi-host line parsing, and ad/malware/TeamSpeak filters.";
+
+            LblHelpCard6Title.Text  = fa ? "🛡️ گیم‌بوستر ایمن، نگهداری و بروزرسانی" : "🛡️ Game Booster, Maintenance & Updates";
+            TxtHelpCard6Body.Text   = fa
+                ? "• گیم‌بوستر ایمن: فقط سرویس‌های غیرضروری در حال اجرا را موقتاً متوقف می‌کند و با دکمه «بازگردانی حالت عادی» دقیقاً همان سرویس‌ها را برمی‌گرداند.\n• نگهداری و تعمیرات: پاکسازی امن فایل‌های موقت قدیمی‌تر از ۲۴ ساعت (با محافظت از کش .NET)، تعمیر سیستمی DISM+SFC، ریست ایمن آپدیت ویندوز، پروکسی و بکاپ فایروال.\n• سینی سیستم و آپدیت خودکار: تغییر سریع DNS از منوی Tray، اجرای خودکار با ویندوز و آپدیت خاموش گیت‌هاب با تایید هش SHA-256."
+                : "• Safe Game Booster: Pauses only currently running non-essential services and restores exact original state with Restore Normal.\n• Maintenance & Repair: 24h-guarded Temp cleaner (protects %TEMP%\\.net), DISM+SFC, safe Windows Update reset, Proxy & Firewall backup/reset.\n• System Tray & Auto-Updater: Quick DNS tray menu, elevated Start-with-Windows, and SHA-256 verified silent GitHub updates.";
 
             LblConsoleHeader.Text    = fa ? "▶ خروجی زنده دستورات سیستم" : "▶ LIVE COMMAND STREAM";
             BtnCancelCommand.Content = fa ? "⏹ توقف" : "⏹ Stop";
@@ -933,16 +1030,20 @@ namespace AionToolPro.Desktop
             }
         }
 
-        private async Task RefreshPingTelemetryAsync()
+        private async Task RefreshPingTelemetryAsync(bool forceImmediate = false)
         {
-            if (_isPingRunning || _isClosing)
+            if (_isClosing) return;
+            if (_isPingRunning)
+            {
+                if (forceImmediate) _pingRescanRequested = true;
                 return;
+            }
 
             bool isHiddenOrMinimized = WindowState == WindowState.Minimized || !IsVisible;
             _pingTickCounter++;
 
             // When minimized to tray, keep Tray tooltip alive at low overhead (every ~6s = every 4th tick)
-            if (isHiddenOrMinimized && (_pingTickCounter % 4 != 0))
+            if (!forceImmediate && isHiddenOrMinimized && (_pingTickCounter % 4 != 0))
                 return;
 
             _isPingRunning = true;
@@ -955,6 +1056,8 @@ namespace AionToolPro.Desktop
 
                 int probeGen = _pingGeneration;
                 string globalTarget = _globalPingTarget;
+                string intranetTarget = _intranetPingTarget;
+                string intranetShort = GetIntranetShortLabel(fa: false);
                 string routerIp = _detectedRouterIp;
                 bool hasRouter = !string.IsNullOrWhiteSpace(routerIp);
 
@@ -968,7 +1071,7 @@ namespace AionToolPro.Desktop
                     ? _service.ProbeHostAccurateAsync(routerIp, timeoutMs: 1200, fallbackTcpPorts: new[] { 80, 443 }, allowTcpFallback: tryRouterTcp, treatTcpRefusedAsAlive: true)
                     : Task.FromResult(new PingProbeResult(null, ProbeTransport.Timeout));
 
-                var tIntranet = _service.ProbeHostAccurateAsync("www.arvancloud.ir", timeoutMs: 2000, fallbackTcpPorts: new[] { 443 }, allowTcpFallback: tryIntranetTcp);
+                var tIntranet = _service.ProbeHostAccurateAsync(intranetTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 80 }, allowTcpFallback: tryIntranetTcp);
                 var tGlobal = _service.ProbeHostAccurateAsync(globalTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 53 }, allowTcpFallback: tryGlobalTcp);
 
                 await Task.WhenAll(tGlobal, tIntranet, tRouter);
@@ -983,7 +1086,7 @@ namespace AionToolPro.Desktop
                 string iStr = FormatShortPing(_intranetPingTracker, true);
                 string rStr = FormatShortPing(_routerPingTracker, hasRouter);
 
-                _trayManager?.UpdateTooltip($"AionToolPro | {globalTarget}: {gStr} | Arvan: {iStr} | Router: {rStr}");
+                _trayManager?.UpdateTooltip($"AionToolPro | {globalTarget}: {gStr} | {intranetShort}: {iStr} | Router: {rStr}");
 
                 if (isHiddenOrMinimized)
                     return;
@@ -1012,7 +1115,7 @@ namespace AionToolPro.Desktop
                 UpdateLivePingCardUi(_intranetPingTracker, TxtPingIntranet, TxtJitterIntranet, TxtStatsIntranet, TxtBadgeIntranet, BarPingIntranet, false, 120.0);
                 UpdateLivePingCardUi(_routerPingTracker, TxtPingRouter, TxtJitterRouter, TxtStatsRouter, TxtBadgeRouter, BarPingRouter, true, 50.0, routerIp);
 
-                TxtHeaderQuickSummary.Text = $"{globalTarget}: {gStr}  ·  Arvan: {iStr}  ·  Router: {rStr}";
+                TxtHeaderQuickSummary.Text = $"{globalTarget}: {gStr}  ·  {intranetShort}: {iStr}  ·  Router: {rStr}";
                 UpdateHeaderLossIndicator(_lastNicDropCount, 0, useCombinedCount: true);
             }
             catch (Exception ex)
@@ -1022,6 +1125,11 @@ namespace AionToolPro.Desktop
             finally
             {
                 _isPingRunning = false;
+                if (_pingRescanRequested && !_isClosing)
+                {
+                    _pingRescanRequested = false;
+                    _ = Dispatcher.InvokeAsync(() => RefreshPingTelemetryAsync(forceImmediate: true));
+                }
             }
         }
 
@@ -1038,7 +1146,7 @@ namespace AionToolPro.Desktop
 
             BdHeaderPacketLoss.ToolTip =
                 $"Global ({_globalPingTarget}) Loss: {_globalPingTracker.LossPercent:F1}% ({_globalPingTracker.LostSamples}/{_globalPingTracker.WindowSamples})\n" +
-                $"Intranet (Arvan) Loss: {_intranetPingTracker.LossPercent:F1}% ({_intranetPingTracker.LostSamples}/{_intranetPingTracker.WindowSamples})\n" +
+                $"Intranet ({_intranetPingTarget}) Loss: {_intranetPingTracker.LossPercent:F1}% ({_intranetPingTracker.LostSamples}/{_intranetPingTracker.WindowSamples})\n" +
                 $"Router Loss: {_routerPingTracker.LossPercent:F1}% ({_routerPingTracker.LostSamples}/{_routerPingTracker.WindowSamples})\n" +
                 $"NIC Hardware/Driver Drops (Errors + Discards): {totalNicDrops}";
         }
@@ -1219,23 +1327,44 @@ namespace AionToolPro.Desktop
         {
             if (!_isInitialized) return;
             ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
+            UpdateSwatchSelectionHighlights();
             SaveCurrentSettings();
         }
 
-        private void ComboThemes_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void CardGlobalPing_Click(object sender, MouseButtonEventArgs e)
         {
-            if (!_isInitialized || ComboThemes.SelectedItem is not ThemeDefinition theme) return;
-            _currentTheme = theme;
-            ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
+            if (!_isInitialized) return;
+            int idx = Array.FindIndex(GlobalPingTargets, g => g.Host.Equals(_globalPingTarget, StringComparison.OrdinalIgnoreCase));
+            int nextIdx = (idx + 1) % GlobalPingTargets.Length;
+            _pingGeneration++;
+            _globalPingTarget = GlobalPingTargets[nextIdx].Host;
+            _globalPingTracker.Reset();
+            TxtPingGlobal.Text = "-- ms";
+            TxtJitterGlobal.Text = "±0 ms";
+            TxtStatsGlobal.Text = "Loss 0.0% (0/0) · Min -- · Avg -- · Max --";
+            TxtBadgeGlobal.Text = "SWITCHING";
+            UpdatePingCardHeaders();
             SaveCurrentSettings();
+            EnqueueConsoleLine($"[PING] Switched Global ping target to {_globalPingTarget}.");
+            _ = RefreshPingTelemetryAsync(forceImmediate: true);
         }
 
-        private void ComboSurfacePalettes_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void CardIntranetPing_Click(object sender, MouseButtonEventArgs e)
         {
-            if (!_isInitialized || ComboSurfacePalettes.SelectedItem is not AppSurfacePalette surface) return;
-            _currentSurface = surface;
-            ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
+            if (!_isInitialized) return;
+            int idx = Array.FindIndex(IntranetPingTargets, i => i.Host.Equals(_intranetPingTarget, StringComparison.OrdinalIgnoreCase));
+            int nextIdx = (idx + 1) % IntranetPingTargets.Length;
+            _pingGeneration++;
+            _intranetPingTarget = IntranetPingTargets[nextIdx].Host;
+            _intranetPingTracker.Reset();
+            TxtPingIntranet.Text = "-- ms";
+            TxtJitterIntranet.Text = "±0 ms";
+            TxtStatsIntranet.Text = "Loss 0.0% (0/0) · Min -- · Avg -- · Max --";
+            TxtBadgeIntranet.Text = "SWITCHING";
+            UpdatePingCardHeaders();
             SaveCurrentSettings();
+            EnqueueConsoleLine($"[PING] Switched Intranet ping target to {_intranetPingTarget}.");
+            _ = RefreshPingTelemetryAsync(forceImmediate: true);
         }
 
         private void ComboLanguage_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1243,18 +1372,6 @@ namespace AionToolPro.Desktop
             if (!_isInitialized || ComboLanguage.SelectedItem is not ComboBoxItem item || item.Tag is not string langCode) return;
             ApplyLanguage(langCode);
             SaveCurrentSettings();
-        }
-
-        private void ComboGlobalPingTarget_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (!_isInitialized || ComboGlobalPingTarget.SelectedItem is not ComboBoxItem item || item.Tag is not string target) return;
-            _pingGeneration++;
-            _globalPingTarget = target;
-            _globalPingTracker.Reset();
-            bool fa = _currentLang == "fa";
-            LblPingCard1.Text = fa ? $"پینگ جهانی · {_globalPingTarget}" : $"GLOBAL · {_globalPingTarget}";
-            SaveCurrentSettings();
-            _ = RefreshPingTelemetryAsync();
         }
 
         private void ChkSettings_Changed(object sender, RoutedEventArgs e)
@@ -1298,7 +1415,8 @@ namespace AionToolPro.Desktop
                     _currentLang,
                     _currentSurface.Id,
                     ChkMinimizeToTray.IsChecked == true,
-                    _globalPingTarget);
+                    _globalPingTarget,
+                    _intranetPingTarget);
 
                 var res = await _service.ExportSettingsBundleAsync(dlg.FileName, current);
                 MessageBox.Show(res.Message, "Export Settings", MessageBoxButton.OK, res.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
@@ -1321,9 +1439,12 @@ namespace AionToolPro.Desktop
                     ApplySettingsModelToUi(bundle.Settings);
                     _isInitialized = true;
                     ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
+                    UpdateSwatchSelectionHighlights();
                     ApplyLanguage(_currentLang);
                     RefreshDnsCatalogUi();
+                    ResetLiveTelemetryBaselines();
                     SaveCurrentSettings();
+                    _ = RefreshPingTelemetryAsync(forceImmediate: true);
                 }
                 MessageBox.Show(msg, "Import Settings", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
             }, "ImportSettings");

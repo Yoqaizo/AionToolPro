@@ -125,10 +125,10 @@
                             <RadioButton x:Name="NavHelp" Content="❓  Help" Checked="Nav_Checked" Tag="Help" Style="{StaticResource NavRadioStyle}"/>
                         </StackPanel>
 
-                        <!-- Bottom-Left: Subtle Version Number 0.8.4 -->
+                        <!-- Bottom-Left: Subtle Version Number 0.8.6 -->
                         <StackPanel DockPanel.Dock="Bottom" Margin="6,0,0,2">
                             <TextBlock Text="Created By Yoqaizo" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}"/>
-                            <TextBlock x:Name="TxtAppVersion" Text="0.8.4" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="TxtAppVersion" Text="0.8.6" FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,0,0"/>
                         </StackPanel>
                     </DockPanel>
                 </Border>
@@ -144,13 +144,13 @@
                     <!-- ==================== TOP TELEMETRY STRIP (3 LIVE PINGS + ACTIVE DNS) ==================== -->
                     <UniformGrid Grid.Row="0" Columns="4" Margin="18,14,8,4">
 
-                        <!-- 1. Global Ping: Selectable (Default 1.1.1.1) -->
-                        <Border Style="{StaticResource TelemetryPingCardStyle}">
+                        <!-- 1. Global Ping: Click to cycle (1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 4.2.2.4) -->
+                        <Border x:Name="CardGlobalPing" Style="{StaticResource ClickableTelemetryPingCardStyle}" MouseLeftButtonUp="CardGlobalPing_Click" ToolTip="Click to switch Global ping server (1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 4.2.2.4)">
                             <StackPanel>
                                 <DockPanel>
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <Ellipse x:Name="PulseDot1" Width="8" Height="8" Fill="#38BDF8" Margin="0,0,6,0"/>
-                                        <TextBlock x:Name="LblPingCard1" Text="GLOBAL · 1.1.1.1" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}"/>
+                                        <TextBlock x:Name="LblPingCard1" Text="GLOBAL · 1.1.1.1 ↻" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}"/>
                                     </StackPanel>
                                     <Border Background="#2238BDF8" CornerRadius="5" Padding="6,1.5" HorizontalAlignment="Right">
                                         <TextBlock x:Name="TxtBadgeGlobal" Text="LIVE" FontSize="9" FontWeight="Bold" Foreground="#38BDF8"/>
@@ -167,13 +167,13 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 2. Intranet Ping: arvancloud.ir -->
-                        <Border Style="{StaticResource TelemetryPingCardStyle}">
+                        <!-- 2. Intranet Ping: Click to cycle (Arvan / SalatinGames / ParsVDS / Iran.ir) -->
+                        <Border x:Name="CardIntranetPing" Style="{StaticResource ClickableTelemetryPingCardStyle}" MouseLeftButtonUp="CardIntranetPing_Click" ToolTip="Click to switch Intranet ping server (arvancloud.ir / salatingames.ir / parsvds.com / iran.ir)">
                             <StackPanel>
                                 <DockPanel>
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <Ellipse x:Name="PulseDot2" Width="8" Height="8" Fill="#10B981" Margin="0,0,6,0"/>
-                                        <TextBlock x:Name="LblPingCard2" Text="INTRANET · ARVAN" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}"/>
+                                        <TextBlock x:Name="LblPingCard2" Text="INTRANET · ARVAN ↻" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource MutedTextBrush}"/>
                                     </StackPanel>
                                     <Border Background="#2210B981" CornerRadius="5" Padding="6,1.5" HorizontalAlignment="Right">
                                         <TextBlock x:Name="TxtBadgeIntranet" Text="LIVE" FontSize="9" FontWeight="Bold" Foreground="#10B981"/>
@@ -510,129 +510,126 @@
                                 </Border>
                             </StackPanel>
 
-                            <!-- ==================== VIEW: SETTINGS (THEMES + DARK MODE + LANGUAGE) ==================== -->
+                            <!-- ==================== VIEW: SETTINGS (COMPACT & MODERN) ==================== -->
                             <StackPanel x:Name="ViewSettings" Visibility="Collapsed">
-                                <Border Style="{StaticResource SectionCardStyle}">
+                                <!-- Card 1: Appearance, Language & Behavior -->
+                                <Border Style="{StaticResource SectionCardStyle}" Padding="16,14">
                                     <StackPanel>
-                                        <TextBlock x:Name="LblThemeStudioTitle" Text="Themes, Language &amp; Preferences" FontSize="15.5" FontWeight="Bold" Margin="0,0,0,12"/>
+                                        <DockPanel Margin="0,0,0,10">
+                                            <TextBlock x:Name="LblThemeStudioTitle" Text="Appearance &amp; Preferences" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                <TextBlock x:Name="LblLanguageSelect" Text="Language:" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                <ComboBox x:Name="ComboLanguage" Width="118" Height="30" SelectionChanged="ComboLanguage_SelectionChanged" Margin="0,0,14,0">
+                                                    <ComboBoxItem Content="English" Tag="en"/>
+                                                    <ComboBoxItem Content="فارسی" Tag="fa"/>
+                                                </ComboBox>
+                                                <CheckBox x:Name="ChkDarkMode" Content="Dark Mode" IsChecked="True" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Checked="ChkDarkMode_Changed" Unchecked="ChkDarkMode_Changed"/>
+                                            </StackPanel>
+                                        </DockPanel>
 
+                                        <TextBlock x:Name="LblThemeSelect" Text="Accent Theme" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,6"/>
                                         <WrapPanel x:Name="ThemeSwatchesWrapPanel" Margin="0,0,0,10"/>
-                                        <TextBlock x:Name="LblAppBgPaletteTitle" Text="Full App Background Color:" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,0,8"/>
-                                        <WrapPanel x:Name="SurfaceSwatchesWrapPanel" Margin="0,0,0,12"/>
 
-                                        <WrapPanel VerticalAlignment="Center">
-                                            <TextBlock x:Name="LblThemeSelect" Text="Theme:" VerticalAlignment="Center" Margin="0,0,8,8"/>
-                                            <ComboBox x:Name="ComboThemes" Width="230" Height="34" FlowDirection="LeftToRight" SelectionChanged="ComboThemes_SelectionChanged" Margin="0,0,14,8"/>
+                                        <TextBlock x:Name="LblAppBgPaletteTitle" Text="Background Surface" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,6"/>
+                                        <WrapPanel x:Name="SurfaceSwatchesWrapPanel" Margin="0,0,0,10"/>
 
-                                            <TextBlock x:Name="LblSurfaceSelect" Text="App Color:" VerticalAlignment="Center" Margin="0,0,8,8"/>
-                                            <ComboBox x:Name="ComboSurfacePalettes" Width="210" Height="34" FlowDirection="LeftToRight" SelectionChanged="ComboSurfacePalettes_SelectionChanged" Margin="0,0,14,8"/>
-
-                                            <TextBlock x:Name="LblLanguageSelect" Text="Language:" VerticalAlignment="Center" Margin="0,0,8,8"/>
-                                            <ComboBox x:Name="ComboLanguage" Width="130" Height="34" SelectionChanged="ComboLanguage_SelectionChanged" Margin="0,0,18,8">
-                                                <ComboBoxItem Content="English" Tag="en"/>
-                                                <ComboBoxItem Content="فارسی" Tag="fa"/>
-                                            </ComboBox>
-
-                                            <TextBlock x:Name="LblPingTargetSelect" Text="Ping Server:" VerticalAlignment="Center" Margin="0,0,8,8"/>
-                                            <ComboBox x:Name="ComboGlobalPingTarget" Width="175" Height="34" FlowDirection="LeftToRight" SelectionChanged="ComboGlobalPingTarget_SelectionChanged" Margin="0,0,18,8">
-                                                <ComboBoxItem Content="1.1.1.1 (Cloudflare)" Tag="1.1.1.1"/>
-                                                <ComboBoxItem Content="8.8.8.8 (Google)" Tag="8.8.8.8"/>
-                                                <ComboBoxItem Content="9.9.9.9 (Quad9)" Tag="9.9.9.9"/>
-                                                <ComboBoxItem Content="4.2.2.4 (Level3)" Tag="4.2.2.4"/>
-                                            </ComboBox>
-
-                                            <CheckBox x:Name="ChkDarkMode" Content="Dark Mode" IsChecked="True" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,16,8" Checked="ChkDarkMode_Changed" Unchecked="ChkDarkMode_Changed"/>
-                                            <CheckBox x:Name="ChkRememberSettings" Content="Remember Settings" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,16,8" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
-                                            <CheckBox x:Name="ChkEnableLogging" Content="Save Action Log" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,16,8" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
-                                            <CheckBox x:Name="ChkMinimizeToTray" Content="Minimize to System Tray" IsChecked="False" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,16,8" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
-                                            <CheckBox x:Name="ChkStartWithWindows" Content="Start with Windows" IsChecked="False" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,0,8" Checked="ChkStartWithWindows_Changed" Unchecked="ChkStartWithWindows_Changed"/>
-                                        </WrapPanel>
+                                        <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8">
+                                            <WrapPanel VerticalAlignment="Center">
+                                                <CheckBox x:Name="ChkMinimizeToTray" Content="Minimize to System Tray" IsChecked="False" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,2,20,2" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
+                                                <CheckBox x:Name="ChkStartWithWindows" Content="Start with Windows" IsChecked="False" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,2,20,2" Checked="ChkStartWithWindows_Changed" Unchecked="ChkStartWithWindows_Changed"/>
+                                                <CheckBox x:Name="ChkRememberSettings" Content="Remember Settings" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,2,20,2" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
+                                                <CheckBox x:Name="ChkEnableLogging" Content="Save Action Log" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,2,0,2" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
+                                            </WrapPanel>
+                                        </Border>
                                     </StackPanel>
                                 </Border>
 
-                                <Border Style="{StaticResource SectionCardStyle}">
+                                <!-- Card 2: Updates, Backup & Compact Action Log -->
+                                <Border Style="{StaticResource SectionCardStyle}" Padding="16,14">
                                     <StackPanel>
-                                        <TextBlock x:Name="LblAppUpdateTitle" Text="Software Update" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
-                                        <WrapPanel>
-                                            <Button x:Name="BtnCheckUpdate" Content="🔄 Check for Updates" Click="BtnCheckUpdate_Click" Style="{StaticResource PrimaryBtnStyle}" Width="220"/>
-                                            <Button x:Name="BtnExportSettings" Content="📤 Export Settings" Click="BtnExportSettings_Click" Style="{StaticResource SecondaryBtnStyle}"/>
-                                            <Button x:Name="BtnImportSettings" Content="📥 Import Settings" Click="BtnImportSettings_Click" Style="{StaticResource SecondaryBtnStyle}"/>
-                                        </WrapPanel>
-                                        <ProgressBar x:Name="ProgressUpdate" Height="8" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed" Margin="0,8,0,0" Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource InputSurfaceBrush}" BorderThickness="0"/>
-                                    </StackPanel>
-                                </Border>
+                                        <DockPanel Margin="0,0,0,8">
+                                            <TextBlock x:Name="LblAppUpdateTitle" Text="Updates &amp; Settings Backup" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <WrapPanel HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                <Button x:Name="BtnCheckUpdate" Content="🔄 Check for Updates" Click="BtnCheckUpdate_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="12,6" Margin="0,0,8,0"/>
+                                                <Button x:Name="BtnExportSettings" Content="📤 Export" Click="BtnExportSettings_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="11,6" Margin="0,0,8,0"/>
+                                                <Button x:Name="BtnImportSettings" Content="📥 Import" Click="BtnImportSettings_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="11,6" Margin="0"/>
+                                            </WrapPanel>
+                                        </DockPanel>
+                                        <ProgressBar x:Name="ProgressUpdate" Height="6" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed" Margin="0,0,0,10" Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource InputSurfaceBrush}" BorderThickness="0"/>
 
-                                <Border Style="{StaticResource SectionCardStyle}">
-                                    <StackPanel>
-                                        <TextBlock x:Name="LblActionLogTitle" Text="Action Log" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
-                                        <WrapPanel>
-                                            <Button x:Name="BtnViewLog" Content="Refresh Log" Click="BtnViewLog_Click" Style="{StaticResource PrimaryBtnStyle}"/>
-                                            <Button x:Name="BtnClearLog" Content="Clear Log" Click="BtnClearLog_Click" Style="{StaticResource DangerBtnStyle}"/>
-                                        </WrapPanel>
-                                        <TextBox x:Name="TxtActionLogContent" IsReadOnly="True" FontFamily="Consolas" FontSize="12" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="220" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0"/>
+                                        <Border Height="1" Background="{DynamicResource BorderHairlineBrush}" Margin="0,4,0,10"/>
+
+                                        <DockPanel Margin="0,0,0,6">
+                                            <TextBlock x:Name="LblActionLogTitle" Text="Action Log" FontSize="13.5" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Button x:Name="BtnViewLog" Content="Refresh" Click="BtnViewLog_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="10,4" Margin="0,0,6,0"/>
+                                                <Button x:Name="BtnClearLog" Content="Clear" Click="BtnClearLog_Click" Style="{StaticResource DangerBtnStyle}" Padding="10,4" Margin="0"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <TextBox x:Name="TxtActionLogContent" IsReadOnly="True" FontFamily="Consolas" FontSize="11.5" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Height="165" VerticalScrollBarVisibility="Auto"/>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
 
-                            <!-- ==================== VIEW: HELP (COMPLETE ENGLISH VISUAL FAQ) ==================== -->
-                            <StackPanel x:Name="ViewHelp" Visibility="Collapsed" FlowDirection="LeftToRight">
+                            <!-- ==================== VIEW: HELP (FULL BILINGUAL EN + FA RTL GUIDE) ==================== -->
+                            <StackPanel x:Name="ViewHelp" Visibility="Collapsed">
                                 <Border Style="{StaticResource SectionCardStyle}">
                                     <StackPanel>
-                                        <TextBlock Text="AionToolPro — Complete Feature &amp; Button Guide" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
-                                        <TextBlock Text="Visual reference explaining every indicator, button, and tool inside AionToolPro." FontSize="12" Foreground="{DynamicResource MutedTextBrush}" Margin="0,3,0,14"/>
+                                        <TextBlock x:Name="LblHelpTitle" Text="AionToolPro — Complete Feature &amp; Button Guide" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
+                                        <TextBlock x:Name="LblHelpSubtitle" Text="Visual reference explaining every indicator, button, and tool inside AionToolPro." FontSize="12" Foreground="{DynamicResource MutedTextBrush}" Margin="0,3,0,14"/>
 
                                         <UniformGrid Columns="2">
                                             <!-- Card 1 -->
-                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,8,10">
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="4,0,4,10">
                                                 <StackPanel>
-                                                    <TextBlock Text="⚡ Top Status Light &amp; Network Adaptor" FontWeight="Bold" FontSize="13.5" Foreground="#38BDF8" Margin="0,0,0,6"/>
-                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
-                                                               Text="• Top-Left Status Light: Shows Green when your PC has active internet connectivity and turns Red immediately if connection drops.&#x0a;• Network Adaptor Dots: Automatically scans real hardware interfaces on startup. Green = Connected, Orange = Enabled but Disconnected, Red = Disabled.&#x0a;• Live Windows Sync: Detects external IP or DNS changes made in Windows Control Panel automatically."/>
+                                                    <TextBlock x:Name="LblHelpCard1Title" Text="⚡ Status Light &amp; Network Adaptor" FontWeight="Bold" FontSize="13.5" Foreground="#38BDF8" Margin="0,0,0,6"/>
+                                                    <TextBlock x:Name="TxtHelpCard1Body" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="20"
+                                                               Text="• Status LED: Green = healthy internet, Amber = high packet loss (&gt;=10%), Red = offline.&#x0a;• Network Adaptor Dots: Scans real physical adapters. Green = Connected, Orange = Disconnected, Red = Disabled.&#x0a;• Live Sync &amp; Speedometer: Independent 1-second NIC stats (⬇/⬆ speed, Rx/Tx, NIC drops) never freeze during ping timeouts."/>
                                                 </StackPanel>
                                             </Border>
 
                                             <!-- Card 2 -->
-                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="8,0,0,10">
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="4,0,4,10">
                                                 <StackPanel>
-                                                    <TextBlock Text="📊 Triple Live Ping Monitors" FontWeight="Bold" FontSize="13.5" Foreground="#10B981" Margin="0,0,0,6"/>
-                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
-                                                               Text="• Global Ping (Default 1.1.1.1): Uses standard 32-byte TTL=128 Windows ICMP with RFC 3550 smoothed jitter, honest 40-packet sliding-window loss, and automatic TCP fallback when ICMP is blocked by a VPN/firewall.&#x0a;• Intranet Arvan: Measures domestic latency to www.arvancloud.ir.&#x0a;• PC to Router: Automatically detects your default gateway and measures Wi-Fi/LAN delay (with TCP RST-aware fallback)."/>
+                                                    <TextBlock x:Name="LblHelpCard2Title" Text="📊 Interactive Live Ping Monitors" FontWeight="Bold" FontSize="13.5" Foreground="#10B981" Margin="0,0,0,6"/>
+                                                    <TextBlock x:Name="TxtHelpCard2Body" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="20"
+                                                               Text="• Click Global Card to Switch Server: Cycles between 1.1.1.1 (Cloudflare), 8.8.8.8 (Google), 9.9.9.9 (Quad9), and 4.2.2.4.&#x0a;• Click Intranet Card to Switch Server: Cycles between arvancloud.ir, salatingames.ir, parsvds.com, and iran.ir.&#x0a;• System-Grade Accuracy: Standard 32-byte TTL=128 ICMP, RFC 3550 jitter, honest 40-packet loss, and automatic TCP ONLY fallback if ICMP is blocked."/>
                                                 </StackPanel>
                                             </Border>
 
                                             <!-- Card 3 -->
-                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,8,10">
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="4,0,4,10">
                                                 <StackPanel>
-                                                    <TextBlock Text="🌐 DNS Studio &amp; Encrypted DoH" FontWeight="Bold" FontSize="13.5" Foreground="#F59E0B" Margin="0,0,0,6"/>
-                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
-                                                               Text="• Quick DNS Cards: Click any card on the Dashboard to apply Iranian anti-sanction gaming DNS or global public DNS and flush the cache in one click.&#x0a;• Benchmark All DNS: Sends real UDP/53 DNS queries to all 22 DNS servers simultaneously to find the fastest responding resolver.&#x0a;• Encrypted DoH: Enables Windows 11 DNS-over-HTTPS encryption for Cloudflare, Google, or Quad9."/>
+                                                    <TextBlock x:Name="LblHelpCard3Title" Text="🌐 DNS Studio, Profiles &amp; DoH" FontWeight="Bold" FontSize="13.5" Foreground="#F59E0B" Margin="0,0,0,6"/>
+                                                    <TextBlock x:Name="TxtHelpCard3Body" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="20"
+                                                               Text="• Quick DNS &amp; Search: Click any DNS card on the Dashboard or filter by name/IP. Automatically resets IPv6 DNS to prevent leaks on IPv4-only anti-sanction DNS.&#x0a;• Custom Profiles &amp; UDP/53 Benchmark: Save your own DNS profiles and benchmark all resolvers using real UDP port 53 queries.&#x0a;• Windows 11 DoH: Enables encrypted DNS-over-HTTPS (udpfallback=yes) with safe backup/restore."/>
                                                 </StackPanel>
                                             </Border>
 
                                             <!-- Card 4 -->
-                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="8,0,0,10">
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="4,0,4,10">
                                                 <StackPanel>
-                                                    <TextBlock Text="📡 Network Info &amp; Diagnostics" FontWeight="Bold" FontSize="13.5" Foreground="#A855F7" Margin="0,0,0,6"/>
-                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
-                                                               Text="• IP &amp; MAC Info: Displays detailed IPv4, subnet mask, gateway, DNS servers, and physical MAC address.&#x0a;• Public IP: Queries ipinfo.io to show your external IP address, country, and ISP organization.&#x0a;• Ping Monitor, Traceroute &amp; Port Check: Tests connection stability, traces up to 20 network hops, or checks if a specific TCP port is open."/>
+                                                    <TextBlock x:Name="LblHelpCard4Title" Text="📡 Diagnostics, STUN NAT &amp; App Monitor" FontWeight="Bold" FontSize="13.5" Foreground="#A855F7" Margin="0,0,0,6"/>
+                                                    <TextBlock x:Name="TxtHelpCard4Body" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="20"
+                                                               Text="• STUN NAT &amp; Speed Test: Dual-server RFC 5389 UDP STUN detects Open/Cone/Symmetric NAT &amp; CGNAT; 2-stream Cloudflare speed test &amp; Game Server Pings.&#x0a;• Active Connections (IPv4/IPv6): Live socket monitor with search, protected process guard, and SHA-256 hashed Windows Firewall block/unblock.&#x0a;• Ping Monitor, Traceroute &amp; Port Check: Live cancellable diagnostics."/>
                                                 </StackPanel>
                                             </Border>
 
                                             <!-- Card 5 -->
-                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,8,0">
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="4,0,4,0">
                                                 <StackPanel>
-                                                    <TextBlock Text="📶 Wi-Fi Manager &amp; Hosts Blocklists" FontWeight="Bold" FontSize="13.5" Foreground="#FB923C" Margin="0,0,0,6"/>
-                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
-                                                               Text="• Saved Profiles: Loads all saved Wi-Fi networks (masked by default) with options to reveal, copy, or forget any profile.&#x0a;• Hosts Blocklists: Downloads and applies ad-blocking, malware-blocking, or TeamSpeak rule lists into the Windows hosts file with automatic backup."/>
+                                                    <TextBlock x:Name="LblHelpCard5Title" Text="📶 Wi-Fi Manager &amp; Atomic Hosts" FontWeight="Bold" FontSize="13.5" Foreground="#FB923C" Margin="0,0,0,6"/>
+                                                    <TextBlock x:Name="TxtHelpCard5Body" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="20"
+                                                               Text="• Wi-Fi Profiles: Language-independent extraction with passwords masked by default — reveal, copy, or forget any saved network safely.&#x0a;• Hosts Blocklists: Atomic UTF-8 (no BOM) writes with automatic timestamped backups, multi-host line parsing, and ad/malware/TeamSpeak filters."/>
                                                 </StackPanel>
                                             </Border>
 
                                             <!-- Card 6 -->
-                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="8,0,0,0">
+                                            <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="4,0,4,0">
                                                 <StackPanel>
-                                                    <TextBlock Text="🛡️ Network Fixes &amp; Windows Maintenance" FontWeight="Bold" FontSize="13.5" Foreground="#F43F5E" Margin="0,0,0,6"/>
-                                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="19"
-                                                               Text="• Disable Proxy: Turns off leftover system proxies set by VPNs that block internet access.&#x0a;• Full Network Repair: Resets Winsock catalog, TCP/IP stack, ARP cache, and firewall rules.&#x0a;• Maintenance: Safely cleans Temp files older than 24 hours, runs DISM + SFC system repair, and resets Windows Update with automatic service recovery."/>
+                                                    <TextBlock x:Name="LblHelpCard6Title" Text="🛡️ Game Booster, Maintenance &amp; Updates" FontWeight="Bold" FontSize="13.5" Foreground="#F43F5E" Margin="0,0,0,6"/>
+                                                    <TextBlock x:Name="TxtHelpCard6Body" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="20"
+                                                               Text="• Safe Game Booster: Pauses only currently running non-essential services and restores exact original state with Restore Normal.&#x0a;• Maintenance &amp; Repair: 24h-guarded Temp cleaner (protects %TEMP%\.net), DISM+SFC, safe Windows Update reset, Proxy &amp; Firewall backup/reset.&#x0a;• System Tray &amp; Auto-Updater: Quick DNS tray menu, elevated Start-with-Windows, and SHA-256 verified silent GitHub updates."/>
                                                 </StackPanel>
                                             </Border>
                                         </UniformGrid>

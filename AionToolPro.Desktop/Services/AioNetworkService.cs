@@ -67,7 +67,7 @@ namespace AionToolPro.Desktop.Services
         public static string GetAppVersionString()
         {
             var v = Assembly.GetExecutingAssembly().GetName().Version;
-            if (v == null) return "0.8.4";
+            if (v == null) return "0.8.6";
             return $"{Math.Max(0, v.Major)}.{Math.Max(0, v.Minor)}.{Math.Max(0, v.Build)}";
         }
 
@@ -422,7 +422,7 @@ namespace AionToolPro.Desktop.Services
 
             try
             {
-                using var cts = new CancellationTokenSource(1200);
+                using var cts = new CancellationTokenSource(2000);
                 var addresses = await Dns.GetHostAddressesAsync(hostOrIp, cts.Token).ConfigureAwait(false);
                 var ipv4 = addresses.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
                 if (ipv4 != null)
@@ -588,7 +588,7 @@ namespace AionToolPro.Desktop.Services
         }
 
         // ==================== SETTINGS, EXPORT/IMPORT & ACTION LOG ====================
-        public void SaveSettings(int themeId, string interfaceName, bool isDarkMode, string languageCode, int surfacePaletteId = 0, bool minimizeToTray = false, string globalPingTarget = "1.1.1.1")
+        public void SaveSettings(int themeId, string interfaceName, bool isDarkMode, string languageCode, int surfacePaletteId = 0, bool minimizeToTray = false, string globalPingTarget = "1.1.1.1", string intranetPingTarget = "www.arvancloud.ir")
         {
             lock (_ioLock)
             {
@@ -602,8 +602,9 @@ namespace AionToolPro.Desktop.Services
                     }
 
                     Directory.CreateDirectory(_cfgDir);
-                    string safeTarget = ValidateHostOrIp(globalPingTarget) ? globalPingTarget.Trim() : "1.1.1.1";
-                    var model = new AppSettingsModel(themeId, interfaceName, EnableActionLog, isDarkMode, languageCode, surfacePaletteId, minimizeToTray, safeTarget);
+                    string safeGlobal = ValidateHostOrIp(globalPingTarget) ? globalPingTarget.Trim() : "1.1.1.1";
+                    string safeIntranet = ValidateHostOrIp(intranetPingTarget) ? intranetPingTarget.Trim() : "www.arvancloud.ir";
+                    var model = new AppSettingsModel(themeId, interfaceName, EnableActionLog, isDarkMode, languageCode, surfacePaletteId, minimizeToTray, safeGlobal, safeIntranet);
                     string tmp = ConfigFilePath + ".tmp";
                     File.WriteAllText(tmp, JsonSerializer.Serialize(model, JsonOpts), new UTF8Encoding(false));
                     if (File.Exists(ConfigFilePath))
@@ -643,7 +644,7 @@ namespace AionToolPro.Desktop.Services
                             else if (k.Equals("dark", StringComparison.OrdinalIgnoreCase)) dark = v != "0";
                             else if (k.Equals("lang", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(v)) lang = v;
                         }
-                        return new AppSettingsModel(theme, iface, log, dark, lang, surface, false, "1.1.1.1");
+                        return new AppSettingsModel(theme, iface, log, dark, lang, surface, false, "1.1.1.1", "www.arvancloud.ir");
                     }
                 }
                 catch { }
