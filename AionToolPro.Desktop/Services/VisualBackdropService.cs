@@ -29,7 +29,9 @@ namespace AionToolPro.Desktop.Services
         private const int DWMSBT_MAINWINDOW = 2;      // Mica
         private const int DWMSBT_TRANSIENTWINDOW = 3; // Acrylic
 
+        private const int GWL_STYLE = -16;
         private const int GWL_EXSTYLE = -20;
+        private const long WS_SYSMENU = 0x00080000L;
         private const int WS_EX_LAYERED = 0x00080000;
         private const uint LWA_ALPHA = 0x00000002;
 
@@ -111,6 +113,17 @@ namespace AionToolPro.Desktop.Services
         private static bool? _lastMaximized;
         private static bool _lastLayeredActive;
 
+        private static long GetWindowStyle(IntPtr hwnd) =>
+            IntPtr.Size == 8 ? GetWindowLongPtr64(hwnd, GWL_STYLE).ToInt64() : GetWindowLong32(hwnd, GWL_STYLE);
+
+        private static void SetWindowStyle(IntPtr hwnd, long value)
+        {
+            if (IntPtr.Size == 8)
+                SetWindowLongPtr64(hwnd, GWL_STYLE, new IntPtr(value));
+            else
+                SetWindowLong32(hwnd, GWL_STYLE, (int)value);
+        }
+
         private static long GetWindowExStyle(IntPtr hwnd) =>
             IntPtr.Size == 8 ? GetWindowLongPtr64(hwnd, GWL_EXSTYLE).ToInt64() : GetWindowLong32(hwnd, GWL_EXSTYLE);
 
@@ -120,6 +133,27 @@ namespace AionToolPro.Desktop.Services
                 SetWindowLongPtr64(hwnd, GWL_EXSTYLE, new IntPtr(value));
             else
                 SetWindowLong32(hwnd, GWL_EXSTYLE, (int)value);
+        }
+
+        /// <summary>
+        /// Permanently hides native Windows 10/11 OS caption buttons (-, [], X) on Glass/SingleBorderWindow
+        /// by removing WS_SYSMENU while preserving WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+        /// for native Win11 rounded corners, DWM Acrylic Glass, Aero Snap, and drag-from-maximize.
+        /// </summary>
+        public static void HideNativeCaptionButtons(IntPtr hwnd)
+        {
+            try
+            {
+                if (hwnd == IntPtr.Zero) return;
+                long style = GetWindowStyle(hwnd);
+                if ((style & WS_SYSMENU) != 0)
+                {
+                    SetWindowStyle(hwnd, style & ~WS_SYSMENU);
+                    SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+                }
+            }
+            catch { }
         }
 
         public static bool IsWindowsTransparencyEnabled()
@@ -185,6 +219,9 @@ namespace AionToolPro.Desktop.Services
                 int build = Environment.OSVersion.Version.Build;
                 bool isMaximized = window.WindowState == WindowState.Maximized;
                 var hwndSource = HwndSource.FromHwnd(hwnd);
+
+                // 0. Guarantee native OS caption buttons (-, [], X) are NEVER drawn on top of custom chrome
+                HideNativeCaptionButtons(hwnd);
 
                 // 1. Immersive Dark Mode frame hint (only when changed)
                 if (forceRefresh || _lastDarkFrame != isDarkSurface)

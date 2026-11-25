@@ -65,10 +65,11 @@ namespace AionToolPro.Desktop.Themes
             Color inputBgColor   = CalibrateColor(ParseColor(inputHex), brightness, contrast);
             Color borderColor    = CalibrateColor(ParseColor(borderHex), brightness, contrast);
             Color solidCanvas    = Color.FromRgb(canvasColor.R, canvasColor.G, canvasColor.B);
+            Color popupColor     = Color.FromArgb(248, cardColor.R, cardColor.G, cardColor.B);
 
             double textContrast = 1.0 + (contrast - 1.0) * 0.45;
             Color primaryText    = CalibrateColor(ParseColor(useLight ? "#0F172A" : "#F8FAFC"), 1.0, textContrast);
-            Color mutedText      = CalibrateColor(ParseColor(useLight ? "#475569" : "#94A3B8"), Math.Clamp(brightness, 0.88, 1.15), textContrast);
+            Color mutedText      = CalibrateColor(ParseColor(useLight ? "#475569" : "#9AA8BE"), Math.Clamp(brightness, 0.96, 1.15), Math.Clamp(textContrast, 0.95, 1.15));
 
             Color accentColor    = CalibrateColor(ParseColor(theme.AccentHex), Math.Clamp(brightness, 0.85, 1.20), Math.Clamp(contrast, 0.85, 1.25));
             Color secondaryColor = CalibrateColor(ParseColor(theme.SecondaryHex), Math.Clamp(brightness, 0.85, 1.20), Math.Clamp(contrast, 0.85, 1.25));
@@ -114,6 +115,7 @@ namespace AionToolPro.Desktop.Themes
                 ? (useLight ? Color.FromArgb(200, 255, 255, 255) : Color.FromArgb(72, 255, 255, 255))
                 : borderColor;
             SetBrush(res, "GlassEdgeBrush", glassEdge, animate);
+            SetBrush(res, "PopupSurfaceBrush", popupColor, animate);
 
             var grad = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 1) };
             grad.GradientStops.Add(new GradientStop(accentColor, 0.0));

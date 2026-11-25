@@ -150,6 +150,7 @@ namespace AionToolPro.Desktop
             _pingTimer.Tick += async (_, _) => await RefreshPingTelemetryAsync();
             Loaded += MainWindow_Loaded;
             StateChanged += MainWindow_StateChanged;
+            Activated += MainWindow_Activated;
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -195,25 +196,40 @@ namespace AionToolPro.Desktop
 
         private void ApplyWindowMaximizeBounds()
         {
+            bool useWin11Rounding = WindowState != WindowState.Maximized && Environment.OSVersion.Version.Build >= 22000;
+            bool isRtl = _currentLang == "fa";
+
             if (WindowState == WindowState.Maximized)
             {
                 // Compensate Win32 SingleBorderWindow offscreen sizing frame cleanly at any DPI (100%-200%)
                 RootWindowBorder.Padding = VisualBackdropService.GetMaximizedFrameThickness(this);
                 RootWindowBorder.BorderThickness = new Thickness(0);
+                RootWindowBorder.CornerRadius = new CornerRadius(0);
+                TitleBarBorder.CornerRadius = new CornerRadius(0);
+                SidebarBorder.CornerRadius = new CornerRadius(0);
+                ConsoleBorder.CornerRadius = new CornerRadius(0);
+                UpdateModalOverlay.CornerRadius = new CornerRadius(0);
                 if (BtnMaximize != null)
                 {
                     BtnMaximize.Content = "❐";
-                    BtnMaximize.ToolTip = _currentLang == "fa" ? "بازگردانی پنجره" : "Restore";
+                    BtnMaximize.ToolTip = isRtl ? "بازگردانی پنجره" : "Restore";
                 }
             }
             else
             {
                 RootWindowBorder.Padding = new Thickness(0);
                 RootWindowBorder.BorderThickness = new Thickness(1);
+                double r = useWin11Rounding ? 8.0 : 0.0;
+                double ri = useWin11Rounding ? 7.0 : 0.0;
+                RootWindowBorder.CornerRadius = new CornerRadius(r);
+                TitleBarBorder.CornerRadius = new CornerRadius(ri, ri, 0, 0);
+                SidebarBorder.CornerRadius = isRtl ? new CornerRadius(0, 0, ri, 0) : new CornerRadius(0, 0, 0, ri);
+                ConsoleBorder.CornerRadius = isRtl ? new CornerRadius(0, 0, 0, ri) : new CornerRadius(0, 0, ri, 0);
+                UpdateModalOverlay.CornerRadius = new CornerRadius(ri);
                 if (BtnMaximize != null)
                 {
                     BtnMaximize.Content = "▢";
-                    BtnMaximize.ToolTip = _currentLang == "fa" ? "بزرگ‌نمایی" : "Maximize";
+                    BtnMaximize.ToolTip = isRtl ? "بزرگ‌نمایی" : "Maximize";
                 }
             }
         }
@@ -359,6 +375,14 @@ namespace AionToolPro.Desktop
             _ = RefreshRealTimeTelemetryAsync();
         }
 
+        private void MainWindow_Activated(object? sender, EventArgs e)
+        {
+            if (!_isInitialized || _isClosing) return;
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero)
+                VisualBackdropService.HideNativeCaptionButtons(hwnd);
+        }
+
         private void MainWindow_StateChanged(object? sender, EventArgs e)
         {
             if (_isInitialized)
@@ -378,6 +402,18 @@ namespace AionToolPro.Desktop
         {
             _forceExit = true;
             try { Close(); } catch { }
+        }
+
+        protected override void OnPreviewKeyDown(KeyEventArgs e)
+        {
+            if (e.Key == Key.System && e.SystemKey == Key.F4)
+            {
+                e.Handled = true;
+                _forceExit = true;
+                Close();
+                return;
+            }
+            base.OnPreviewKeyDown(e);
         }
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
@@ -1090,7 +1126,7 @@ namespace AionToolPro.Desktop
             BtnDashFastestDns.Content     = fa ? "⚡ سریع‌ترین دی‌ان‌اس" : "⚡ Fastest DNS";
             BtnDashResetDns.Content       = fa ? "↺ ریست دی‌ان‌اس" : "↺ Reset DNS";
             BtnDashResetDns.ToolTip       = fa ? "بازگردانی دی‌ان‌اس به حالت خودکار (DHCP) و پاکسازی کامل کش دی‌ان‌اس" : "Reset DNS to automatic DHCP and clear DNS cache";
-            BtnDashResetAdapter.Content   = fa ? "🔄 ریست کارت شبکه" : "🔄 Reset Adaptor";
+            BtnDashResetAdapter.Content   = fa ? "↻ ریست کارت شبکه" : "↻ Reset Adaptor";
             BtnDashResetAdapter.ToolTip   = fa ? "ریست کامل کارت شبکه، تخلیه کش و دریافت مجدد آی‌پی" : "Full network adaptor reset and IP renew";
             LblDashQuickDnsTitle.Text     = fa ? "تغییر سریع دی‌ان‌اس با یک کلیک" : "QUICK DNS SWITCHER";
             TxtSearchDns.ToolTip          = fa ? "جستجوی DNS بر اساس نام یا آی‌پی..." : "Search DNS by name or IP...";
@@ -1144,7 +1180,7 @@ namespace AionToolPro.Desktop
 
             LblAppNetMonitorTitle.Text = fa ? "اتصالات فعال برنامه‌ها (IPv4/IPv6)" : "Active Connections by App (IPv4/IPv6)";
             TxtSearchAppNet.ToolTip    = fa ? "فیلتر بر اساس نام برنامه، PID یا آی‌پی..." : "Filter by process name, PID, or IP...";
-            BtnRefreshAppNet.Content   = fa ? "🔄 اسکن برنامه‌های متصل" : "🔄 Scan Active Apps";
+            BtnRefreshAppNet.Content   = fa ? "↻ اسکن برنامه‌های متصل" : "↻ Scan Active Apps";
             BtnAutoAppNet.Content      = _autoRefreshAppMonitor
                 ? (fa ? "⏱️ بروزرسانی خودکار: روشن" : "⏱️ Auto-Refresh: ON")
                 : (fa ? "⏱️ بروزرسانی خودکار: خاموش" : "⏱️ Auto-Refresh: OFF");
@@ -1185,10 +1221,10 @@ namespace AionToolPro.Desktop
             LblMaintDismTitle.Text        = fa ? "تعمیر فایل‌های سیستمی ویندوز" : "Windows System File Repair";
             BtnDismSfc.Content            = fa ? "🛡️ شروع تعمیر سیستمی" : "🛡️ Run DISM & SFC Repair";
             LblMaintUpdateTitle.Text      = fa ? "ریست کش آپدیت ویندوز" : "Windows Update Cache Reset";
-            BtnWindowsUpdateReset.Content = fa ? "🔄 ریست سرویس آپدیت" : "🔄 Reset Windows Update";
+            BtnWindowsUpdateReset.Content = fa ? "↻ ریست سرویس آپدیت" : "↻ Reset Windows Update";
 
             LblAppUpdateTitle.Text      = fa ? "بروزرسانی و پشتیبان تنظیمات" : "Updates & Settings Backup";
-            BtnCheckUpdate.Content      = fa ? "🔄 بررسی بروزرسانی" : "🔄 Check for Updates";
+            BtnCheckUpdate.Content      = fa ? "↻ بررسی بروزرسانی" : "↻ Check for Updates";
             BtnExportSettings.Content   = fa ? "📤 خروجی" : "📤 Export";
             BtnImportSettings.Content   = fa ? "📥 ورود" : "📥 Import";
 
@@ -2693,7 +2729,7 @@ namespace AionToolPro.Desktop
             UpdateModalCard.FlowDirection = fa ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
             LblUpdateNotesHeader.Text     = fa ? "تغییرات نسخه جدید" : "What's New";
             BtnUpdateStartDownload.Content = fa ? "⬇ دانلود و نصب خودکار" : "⬇ Download & Install";
-            BtnUpdateRetry.Content         = fa ? "🔄 تلاش مجدد" : "🔄 Retry";
+            BtnUpdateRetry.Content         = fa ? "↻ تلاش مجدد" : "↻ Retry";
             BtnUpdateCancel.Content        = fa ? "⏹ لغو" : "⏹ Cancel";
             BtnUpdateClose.Content         = fa ? "بستن" : "Close";
 

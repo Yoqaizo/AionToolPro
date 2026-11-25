@@ -42,7 +42,7 @@
             </Grid.RowDefinitions>
 
             <!-- ==================== CUSTOM FRAMELESS TITLE BAR ==================== -->
-            <Border Grid.Row="0" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,0,0,1">
+            <Border x:Name="TitleBarBorder" Grid.Row="0" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,0,0,1">
                 <Grid Margin="16,0,10,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -83,7 +83,7 @@
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
                         <Button x:Name="BtnMinimize" Content="—" Click="BtnMinimize_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Minimize" shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
                         <Button x:Name="BtnMaximize" Content="▢" Click="BtnMaximize_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Maximize" shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
-                        <Button x:Name="BtnClose" Content="✕" Click="BtnClose_Click" Style="{StaticResource WindowChromeBtnStyle}" ToolTip="Close" Foreground="#F43F5E" shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
+                        <Button x:Name="BtnClose" Content="✕" Click="BtnClose_Click" Style="{StaticResource WindowChromeCloseBtnStyle}" ToolTip="Close" shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -96,8 +96,8 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- ==================== SIDEBAR ==================== -->
-                <Border Grid.Column="0" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,0,1,0" Padding="14,16,14,12">
-                    <DockPanel LastChildFill="False">
+                <Border x:Name="SidebarBorder" Grid.Column="0" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,0,1,0" Padding="14,16,14,12">
+                    <DockPanel LastChildFill="True">
 
                         <!-- Network Adaptor Selector with Green / Orange / Red Status Dots -->
                         <Border DockPanel.Dock="Top" Background="{DynamicResource CardSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,14">
@@ -123,8 +123,16 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Categorized Modern Navigation -->
-                        <ScrollViewer DockPanel.Dock="Top" VerticalScrollBarVisibility="Auto">
+                        <!-- Bottom-Left: Pinned Version Footer (Always visible even at 560px window height) -->
+                        <Border DockPanel.Dock="Bottom" Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,10,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Created By Yoqaizo" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}"/>
+                                <TextBlock x:Name="TxtAppVersion" Text="0.9.1" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource MutedTextBrush}" Margin="0,1,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Categorized Modern Navigation (Fills remaining height and scrolls cleanly) -->
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel>
                                 <TextBlock x:Name="LblNavCatOverview" Text="OVERVIEW" Style="{StaticResource NavCategoryHeaderStyle}" Margin="8,0,8,3"/>
                                 <RadioButton x:Name="NavDashboard" Content="⚡  Dashboard" IsChecked="True" Checked="Nav_Checked" Tag="Dashboard" Style="{StaticResource NavRadioStyle}"/>
@@ -143,14 +151,6 @@
                                 <RadioButton x:Name="NavHelp" Content="❓  Help" Checked="Nav_Checked" Tag="Help" Style="{StaticResource NavRadioStyle}"/>
                             </StackPanel>
                         </ScrollViewer>
-
-                        <!-- Bottom-Left: Subtle Version Footer -->
-                        <Border DockPanel.Dock="Bottom" Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,8,0,0">
-                            <StackPanel>
-                                <TextBlock Text="Created By Yoqaizo" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}"/>
-                                <TextBlock x:Name="TxtAppVersion" Text="0.9.0" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource MutedTextBrush}" Margin="0,1,0,0"/>
-                            </StackPanel>
-                        </Border>
                     </DockPanel>
                 </Border>
 
@@ -332,7 +332,7 @@
                                             <Button x:Name="BtnGameBooster" Content="🎮 Game Booster" Click="BtnGameBooster_Click" Style="{StaticResource SuccessBtnStyle}" Padding="16,8" Margin="0,0,10,4"/>
                                             <Button x:Name="BtnDashFastestDns" Content="⚡ Fastest DNS" Click="BtnBenchmarkDns_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="16,8" Margin="0,0,10,4"/>
                                             <Button x:Name="BtnDashResetDns" Content="↺ Reset DNS" Click="BtnResetDnsDhcp_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="16,8" Margin="0,0,10,4" ToolTip="Reset DNS to automatic DHCP and clear DNS cache"/>
-                                            <Button x:Name="BtnDashResetAdapter" Content="🔄 Reset Adaptor" Click="BtnFullAdapterReset_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="16,8" Margin="0,0,0,4" ToolTip="Full network adaptor reset and IP renew"/>
+                                            <Button x:Name="BtnDashResetAdapter" Content="↻ Reset Adaptor" Click="BtnFullAdapterReset_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="16,8" Margin="0,0,0,4" ToolTip="Full network adaptor reset and IP renew"/>
                                         </WrapPanel>
                                     </StackPanel>
                                 </Border>
@@ -470,7 +470,7 @@
                                             <TextBox x:Name="TxtSearchAppNet" Grid.Column="1" Width="220" Height="32" FlowDirection="LeftToRight" TextChanged="TxtSearchAppNet_TextChanged" ToolTip="Filter by process name, PID, or IP..."/>
                                         </Grid>
                                         <WrapPanel>
-                                            <Button x:Name="BtnRefreshAppNet" Content="🔄 Scan Active Apps" Click="BtnRefreshAppNet_Click" Style="{StaticResource PrimaryBtnStyle}"/>
+                                            <Button x:Name="BtnRefreshAppNet" Content="↻ Scan Active Apps" Click="BtnRefreshAppNet_Click" Style="{StaticResource PrimaryBtnStyle}"/>
                                             <Button x:Name="BtnAutoAppNet" Content="⏱️ Auto-Refresh: OFF" Click="BtnAutoAppNet_Click" Style="{StaticResource SecondaryBtnStyle}"/>
                                             <Button x:Name="BtnKillAppNet" Content="❌ Kill Process" Click="BtnKillAppNet_Click" Style="{StaticResource DangerBtnStyle}"/>
                                             <Button x:Name="BtnBlockAppNet" Content="🚫 Block in Firewall" Click="BtnBlockAppNet_Click" Style="{StaticResource DangerBtnStyle}"/>
@@ -583,7 +583,7 @@
                                 <Border Style="{StaticResource SectionCardStyle}">
                                     <StackPanel>
                                         <TextBlock x:Name="LblMaintUpdateTitle" Text="Windows Update Cache Reset" FontSize="15" FontWeight="Bold" Margin="0,0,0,10"/>
-                                        <Button x:Name="BtnWindowsUpdateReset" Content="🔄 Reset Windows Update" Click="BtnWindowsUpdateReset_Click" Style="{StaticResource DangerBtnStyle}" HorizontalAlignment="Left"/>
+                                        <Button x:Name="BtnWindowsUpdateReset" Content="↻ Reset Windows Update" Click="BtnWindowsUpdateReset_Click" Style="{StaticResource DangerBtnStyle}" HorizontalAlignment="Left"/>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -593,9 +593,13 @@
                                 <!-- Card 1: Appearance, Glass Studio & Display Calibration -->
                                 <Border Style="{StaticResource SectionCardStyle}" Padding="16,14">
                                     <StackPanel>
-                                        <DockPanel Margin="0,0,0,10">
-                                            <TextBlock x:Name="LblThemeStudioTitle" Text="Appearance &amp; Visual Studio" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center"/>
-                                            <WrapPanel HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="LblThemeStudioTitle" Grid.Column="0" Text="Appearance &amp; Visual Studio" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,10,0"/>
+                                            <WrapPanel Grid.Column="1" VerticalAlignment="Center">
                                                 <TextBlock x:Name="LblLanguageSelect" Text="Language:" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                                 <ComboBox x:Name="ComboLanguage" Width="114" Height="30" SelectionChanged="ComboLanguage_SelectionChanged" Margin="0,0,14,0">
                                                     <ComboBoxItem Content="English" Tag="en"/>
@@ -604,7 +608,7 @@
                                                 <CheckBox x:Name="ChkDarkMode" Content="Dark Mode" IsChecked="True" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,14,0" Checked="ChkDarkMode_Changed" Unchecked="ChkDarkMode_Changed"/>
                                                 <CheckBox x:Name="ChkGlassMode" Content="Glass Mode" IsChecked="False" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" Checked="ChkGlassMode_Changed" Unchecked="ChkGlassMode_Changed"/>
                                             </WrapPanel>
-                                        </DockPanel>
+                                        </Grid>
 
                                         <TextBlock x:Name="LblThemeSelect" Text="Accent Theme" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,6"/>
                                         <WrapPanel x:Name="ThemeSwatchesWrapPanel" Margin="0,0,0,10"/>
@@ -672,14 +676,18 @@
                                 <!-- Card 2: Updates, Backup & Compact Action Log -->
                                 <Border Style="{StaticResource SectionCardStyle}" Padding="16,14">
                                     <StackPanel>
-                                        <DockPanel Margin="0,0,0,8">
-                                            <TextBlock x:Name="LblAppUpdateTitle" Text="Updates &amp; Settings Backup" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center"/>
-                                            <WrapPanel HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <Button x:Name="BtnCheckUpdate" Content="🔄 Check for Updates" Click="BtnCheckUpdate_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="12,6" Margin="0,0,8,0"/>
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="LblAppUpdateTitle" Grid.Column="0" Text="Updates &amp; Settings Backup" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,10,0"/>
+                                            <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <Button x:Name="BtnCheckUpdate" Content="↻ Check for Updates" Click="BtnCheckUpdate_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="12,6" Margin="0,0,8,0"/>
                                                 <Button x:Name="BtnExportSettings" Content="📤 Export" Click="BtnExportSettings_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="11,6" Margin="0,0,8,0"/>
                                                 <Button x:Name="BtnImportSettings" Content="📥 Import" Click="BtnImportSettings_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="11,6" Margin="0"/>
                                             </WrapPanel>
-                                        </DockPanel>
+                                        </Grid>
 
                                         <Border Height="1" Background="{DynamicResource BorderHairlineBrush}" Margin="0,4,0,10"/>
 
@@ -766,15 +774,19 @@
                     </ScrollViewer>
 
                     <!-- ==================== BOTTOM CONSOLE STREAM ==================== -->
-                    <Border Grid.Row="2" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,1,0,0" Padding="18,8">
+                    <Border x:Name="ConsoleBorder" Grid.Row="2" Background="{DynamicResource SidebarSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="0,1,0,0" Padding="18,8">
                         <DockPanel>
-                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
-                                <TextBlock x:Name="LblConsoleHeader" Text="▶ LIVE COMMAND STREAM" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center"/>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="LblConsoleHeader" Grid.Column="0" Text="▶ LIVE COMMAND STREAM" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
                                     <Button x:Name="BtnCancelCommand" Content="⏹ Stop" Click="BtnCancelCommand_Click" Style="{StaticResource DangerBtnStyle}" Padding="10,2" Margin="0,0,6,0" ToolTip="Cancel running command"/>
                                     <Button x:Name="BtnClearConsole" Content="Clear" Click="BtnClearConsole_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="10,2" Margin="0"/>
                                 </StackPanel>
-                            </DockPanel>
+                            </Grid>
                             <TextBox x:Name="ConsoleOutputBox" IsReadOnly="True" FontFamily="{StaticResource MonoFontFamily}" FontSize="11.5" FlowDirection="LeftToRight" VerticalContentAlignment="Top" Background="{DynamicResource InputSurfaceBrush}" Foreground="{DynamicResource PrimaryTextBrush}" BorderThickness="1" BorderBrush="{DynamicResource BorderHairlineBrush}" Padding="8,5" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
                         </DockPanel>
                     </Border>
@@ -792,7 +804,7 @@
                         MaxWidth="520"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
-                        Background="{DynamicResource CardSurfaceBrush}"
+                        Background="{DynamicResource PopupSurfaceBrush}"
                         BorderBrush="{DynamicResource AccentBrush}"
                         BorderThickness="1.5"
                         CornerRadius="16"
@@ -814,7 +826,7 @@
                                     BorderThickness="1.5"
                                     Margin="0,0,12,0"
                                     VerticalAlignment="Center">
-                                <TextBlock x:Name="TxtUpdateIcon" Text="🔄" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtUpdateIcon" Text="↻" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
 
                             <Button x:Name="BtnUpdateModalCloseTop"
@@ -841,9 +853,14 @@
                                 Padding="12,9"
                                 Margin="0,0,0,12"
                                 Visibility="Collapsed">
-                            <DockPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
                                 <TextBlock x:Name="TxtUpdateVersionFlow"
-                                           Text="v0.9.0  →  v0.9.1"
+                                           Grid.Column="0"
+                                           Text="v0.9.1  →  v0.9.2"
                                            FontFamily="{StaticResource MonoFontFamily}"
                                            FontSize="13"
                                            FontWeight="Bold"
@@ -851,16 +868,16 @@
                                            Foreground="{DynamicResource AccentBrush}"
                                            VerticalAlignment="Center"/>
                                 <Border x:Name="BdUpdateVerifyBadge"
+                                        Grid.Column="1"
                                         Background="#2210B981"
                                         BorderBrush="#10B981"
                                         BorderThickness="1"
                                         CornerRadius="6"
                                         Padding="8,2"
-                                        HorizontalAlignment="Right"
                                         VerticalAlignment="Center">
                                     <TextBlock x:Name="TxtUpdateVerifyText" Text="🔒 HTTPS + SHA-256" FontSize="10" FontWeight="Bold" Foreground="#10B981"/>
                                 </Border>
-                            </DockPanel>
+                            </Grid>
                         </Border>
 
                         <!-- Graphical Progress Panel (Checking / Downloading / Verifying) -->
@@ -943,7 +960,7 @@
                         <!-- Modal Footer Buttons -->
                         <WrapPanel HorizontalAlignment="Right" Margin="0,2,0,0">
                             <Button x:Name="BtnUpdateStartDownload" Content="⬇ Download &amp; Install" Click="BtnUpdateStartDownload_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="16,8" Margin="0,0,8,0" Visibility="Collapsed"/>
-                            <Button x:Name="BtnUpdateRetry" Content="🔄 Retry" Click="BtnUpdateRetry_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="16,8" Margin="0,0,8,0" Visibility="Collapsed"/>
+                            <Button x:Name="BtnUpdateRetry" Content="↻ Retry" Click="BtnUpdateRetry_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="16,8" Margin="0,0,8,0" Visibility="Collapsed"/>
                             <Button x:Name="BtnUpdateCancel" Content="⏹ Cancel" Click="BtnUpdateCancel_Click" Style="{StaticResource DangerBtnStyle}" Padding="16,8" Margin="0,0,8,0" Visibility="Collapsed"/>
                             <Button x:Name="BtnUpdateClose" Content="Close" Click="BtnUpdateClose_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="16,8" Margin="0" Visibility="Collapsed"/>
                         </WrapPanel>

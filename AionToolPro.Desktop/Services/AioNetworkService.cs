@@ -67,7 +67,7 @@ namespace AionToolPro.Desktop.Services
         public static string GetAppVersionString()
         {
             var v = Assembly.GetExecutingAssembly().GetName().Version;
-            if (v == null) return "0.9.0";
+            if (v == null) return "0.9.1";
             return $"{Math.Max(0, v.Major)}.{Math.Max(0, v.Minor)}.{Math.Max(0, v.Build)}";
         }
 

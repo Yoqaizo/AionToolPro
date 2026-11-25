@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.9.0-5865F2?style=for-the-badge" alt="Version 0.9.0" />
+  <img src="https://img.shields.io/badge/Version-0.9.1-5865F2?style=for-the-badge" alt="Version 0.9.1" />
   <img src="https://img.shields.io/badge/.NET-8.0%20WPF-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 8.0 WPF" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10/11 x64" />
   <img src="https://img.shields.io/badge/License-GPL--3.0-10B981?style=for-the-badge" alt="GPL-3.0 License" />
@@ -51,10 +51,10 @@
 
 ## Installation
 
-1. Download the latest `AionToolPro_Setup_v0.9.0.exe` and `checksums.txt` from the [GitHub Releases](https://github.com/Yoqaizo/AionToolPro/releases/latest) page.
+1. Download the latest `AionToolPro_Setup_v0.9.1.exe` and `checksums.txt` from the [GitHub Releases](https://github.com/Yoqaizo/AionToolPro/releases/latest) page.
 2. *(Optional)* Verify the installer integrity in PowerShell:
    ```powershell
-   Get-FileHash .\AionToolPro_Setup_v0.9.0.exe -Algorithm SHA256
+   Get-FileHash .\AionToolPro_Setup_v0.9.1.exe -Algorithm SHA256
    ```
 3. Run the installer and follow the setup wizard.
 

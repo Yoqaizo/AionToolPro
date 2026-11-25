@@ -4,6 +4,15 @@ All notable changes to **AionToolPro** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-11-25
+
+### Visual Hotfix & UI Polish
+- **Fixed Duplicate Windows 11 Caption Buttons (`— □ ×`):** Permanently suppressed native DWM caption buttons via `VisualBackdropService.HideNativeCaptionButtons` (clears `WS_SYSMENU` on startup, state change, and window activation while keeping native rounded corners, Aero Snap, Acrylic Glass, and `Alt+F4`). Added dedicated crimson hover styling (`WindowChromeCloseBtnStyle`) for the custom Close button.
+- **Fixed Glass Corner Alignment (Win11 Rounded Frame):** Synchronized `CornerRadius` across `RootWindowBorder`, `TitleBarBorder`, `SidebarBorder`, `ConsoleBorder`, and `UpdateModalOverlay` (with full LTR/RTL awareness and crisp square reset when Maximized).
+- **Fixed Glass-Mode Popup, Dropdown & Modal Readability:** Introduced opaque theme-calibrated `PopupSurfaceBrush` for `ComboBox` dropdowns, System Tray `ContextMenu`, and `UpdateModalCard` so menus and modals stay razor-sharp even at `35%` Glass transparency.
+- **Fixed DataGrid Selection, Tray Menu & Sidebar Footer Layout:** Added themed `DataGridRow`, `DataGridCell`, `ContextMenu`, and `MenuItem` styles (removing legacy Windows blue row highlights and white tray menus), pinned the Sidebar version footer cleanly at `560px` minimum window height, improved `MutedTextBrush` readability at low Brightness, and replaced blocky emoji glyphs with crisp `↻` icons.
+- **Typography, Categorized DNS Grid & Alignment Polish:** Unified `Segoe UI Variable Text` / `Cascadia Mono` typography, fixed `Button` `TemplateBinding` content alignment, reorganized all 22 built-in DNS servers + Custom profiles into 4 clean responsive `UniformGrid` categories (Iran/Gaming, Global Public including `114DNS`, Security & Ad-Blocking, Custom), and standardized all headers and telemetry cards with 2-column `Grid` layouts.
+
 ## [0.9.0] - 2026-11-25
 
 ### Major UI/UX & Graphics Overhaul
