@@ -22,7 +22,8 @@ namespace AionToolPro.Desktop
     public partial class MainWindow : Window
     {
         private readonly AioNetworkService _service = new();
-        private readonly DispatcherTimer _telemetryTimer = new() { Interval = TimeSpan.FromSeconds(2.0) };
+        private readonly DispatcherTimer _nicTimer = new() { Interval = TimeSpan.FromSeconds(1.0) };
+        private readonly DispatcherTimer _pingTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
         private readonly DispatcherTimer _consoleFlushTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
         private readonly ConcurrentQueue<string> _consoleQueue = new();
         private readonly NetworkAddressChangedEventHandler _networkAddressChangedHandler;
@@ -32,6 +33,7 @@ namespace AionToolPro.Desktop
         private string _selectedInterface = "Ethernet";
         private string _detectedRouterIp = string.Empty;
         private string _lastDetectedPrimaryDns = string.Empty;
+        private string _globalPingTarget = "1.1.1.1";
         private string _currentLang = "en";
         private ThemeDefinition _currentTheme = AioCatalog.Themes[0];
         private AppSurfacePalette _currentSurface = AioCatalog.SurfacePalettes[0];
@@ -41,17 +43,19 @@ namespace AionToolPro.Desktop
         private bool _isInitialized;
         private bool _isClosing;
         private bool _forceExit;
-        private bool _isTelemetryRunning;
+        private bool _isNicRunning;
+        private bool _isPingRunning;
         private bool _autoRefreshAppMonitor;
+        private int _pingTickCounter;
 
         private long _lastRxBytes;
         private long _lastTxBytes;
         private DateTime _lastTick = DateTime.MinValue;
 
-        private long _baseInPkts = -1;
-        private long _baseInErrs = -1;
-        private long _baseOutPkts = -1;
-        private long _baseOutErrs = -1;
+        private int _pingGeneration;
+        private long _baseInDrops = -1;
+        private long _baseOutDrops = -1;
+        private long _lastNicDropCount;
 
         private readonly PingChannelTracker _globalPingTracker = new();
         private readonly PingChannelTracker _intranetPingTracker = new();
@@ -89,6 +93,7 @@ namespace AionToolPro.Desktop
 
             PopulateCatalogControls();
             ComboLanguage.SelectedIndex = 0;
+            ComboGlobalPingTarget.SelectedIndex = 0;
 
             _consoleFlushTimer.Tick += (_, _) => FlushConsoleQueue();
             _consoleFlushTimer.Start();
@@ -100,7 +105,8 @@ namespace AionToolPro.Desktop
             };
             NetworkChange.NetworkAddressChanged += _networkAddressChangedHandler;
 
-            _telemetryTimer.Tick += async (_, _) => await RefreshRealTimeTelemetryAsync();
+            _nicTimer.Tick += async (_, _) => await RefreshNicTelemetryAsync();
+            _pingTimer.Tick += async (_, _) => await RefreshPingTelemetryAsync();
             Loaded += MainWindow_Loaded;
             StateChanged += MainWindow_StateChanged;
         }
@@ -197,7 +203,8 @@ namespace AionToolPro.Desktop
                 ThemeManager.ApplyTheme(_currentTheme, ChkDarkMode.IsChecked == true, _currentSurface.Id);
                 ApplyLanguage(_currentLang);
 
-                _telemetryTimer.Start();
+                _nicTimer.Start();
+                _pingTimer.Start();
                 await RefreshRealTimeTelemetryAsync();
             }, "Startup");
         }
@@ -229,7 +236,8 @@ namespace AionToolPro.Desktop
             _isClosing = true;
             try
             {
-                _telemetryTimer.Stop();
+                _nicTimer.Stop();
+                _pingTimer.Stop();
                 _consoleFlushTimer.Stop();
                 _networkChangeDebounceCts?.Cancel();
                 _networkChangeDebounceCts?.Dispose();
@@ -567,6 +575,11 @@ namespace AionToolPro.Desktop
             _currentLang = saved.LanguageCode == "fa" ? "fa" : "en";
             ComboLanguage.SelectedIndex = _currentLang == "fa" ? 1 : 0;
 
+            _globalPingTarget = AioNetworkService.ValidateHostOrIp(saved.GlobalPingTarget)
+                ? saved.GlobalPingTarget.Trim()
+                : "1.1.1.1";
+            SelectGlobalPingTargetInCombo(_globalPingTarget);
+
             var themeObj = AioCatalog.Themes.FirstOrDefault(t => t.Id == saved.ThemeId) ?? AioCatalog.Themes[0];
             _currentTheme = themeObj;
             ComboThemes.SelectedItem = themeObj;
@@ -587,6 +600,33 @@ namespace AionToolPro.Desktop
             }
         }
 
+        private void SelectGlobalPingTargetInCombo(string target)
+        {
+            foreach (var obj in ComboGlobalPingTarget.Items)
+            {
+                if (obj is ComboBoxItem cbi && cbi.Tag is string tag && tag.Equals(target, StringComparison.OrdinalIgnoreCase))
+                {
+                    ComboGlobalPingTarget.SelectedItem = cbi;
+                    return;
+                }
+            }
+            ComboGlobalPingTarget.SelectedIndex = 0;
+        }
+
+        private void ResetLiveTelemetryBaselines()
+        {
+            _pingGeneration++;
+            _globalPingTracker.Reset();
+            _intranetPingTracker.Reset();
+            _routerPingTracker.Reset();
+            _baseInDrops = -1;
+            _baseOutDrops = -1;
+            _lastNicDropCount = 0;
+            _lastRxBytes = 0;
+            _lastTxBytes = 0;
+            _lastTick = DateTime.MinValue;
+        }
+
         private void SaveCurrentSettings()
         {
             _service.SaveSettings(
@@ -595,7 +635,8 @@ namespace AionToolPro.Desktop
                 ChkDarkMode.IsChecked == true,
                 _currentLang,
                 _currentSurface.Id,
-                ChkMinimizeToTray.IsChecked == true);
+                ChkMinimizeToTray.IsChecked == true,
+                _globalPingTarget);
         }
 
         private async Task LoadNetworkInterfacesAsync(bool preserveSelection = false)
@@ -642,7 +683,7 @@ namespace AionToolPro.Desktop
             NavSettings.Content    = fa ? "🎨  تنظیمات" : "🎨  Settings";
             NavHelp.Content        = fa ? "❓  راهنما" : "❓  Help";
 
-            LblPingCard1.Text      = fa ? "پینگ جهانی · 4.2.2.4" : "GLOBAL · 4.2.2.4";
+            LblPingCard1.Text      = fa ? $"پینگ جهانی · {_globalPingTarget}" : $"GLOBAL · {_globalPingTarget}";
             LblPingCard2.Text      = fa ? "اینترانت · آروان" : "INTRANET · ARVAN";
             LblActiveDnsCard.Text  = fa ? "دی‌ان‌اس فعال" : "ACTIVE DNS";
 
@@ -757,6 +798,7 @@ namespace AionToolPro.Desktop
             LblThemeSelect.Text         = fa ? "پوسته:" : "Theme:";
             LblSurfaceSelect.Text       = fa ? "رنگ برنامه:" : "App Color:";
             LblLanguageSelect.Text      = fa ? "زبان:" : "Language:";
+            LblPingTargetSelect.Text    = fa ? "سرور پینگ:" : "Ping Server:";
             ChkDarkMode.Content         = fa ? "حالت تاریک" : "Dark Mode";
             ChkRememberSettings.Content = fa ? "ذخیره تنظیمات" : "Remember Settings";
             ChkEnableLogging.Content    = fa ? "ثبت گزارش" : "Save Action Log";
@@ -797,56 +839,27 @@ namespace AionToolPro.Desktop
             UpdateActiveDnsCardHighlight(_lastDetectedPrimaryDns);
         }
 
-        // ==================== REAL-TIME TELEMETRY ====================
+        // ==================== REAL-TIME TELEMETRY (DECOUPLED 1s NIC + 1.5s PING) ====================
         private async Task RefreshRealTimeTelemetryAsync()
         {
-            if (_isTelemetryRunning || _isClosing || WindowState == WindowState.Minimized || !IsVisible)
+            await RefreshNicTelemetryAsync();
+            await RefreshPingTelemetryAsync();
+        }
+
+        private async Task RefreshNicTelemetryAsync()
+        {
+            if (_isNicRunning || _isClosing || WindowState == WindowState.Minimized || !IsVisible)
                 return;
 
-            _isTelemetryRunning = true;
+            _isNicRunning = true;
             try
             {
-                string targetIface = _selectedInterface;
-                _detectedRouterIp = await _service.DetectRouterGatewayIpAsync(targetIface);
+                var snap = await _service.CaptureAdapterTelemetryAsync(_selectedInterface);
                 if (_isClosing) return;
 
+                _detectedRouterIp = snap.GatewayIp;
                 bool hasRouter = !string.IsNullOrWhiteSpace(_detectedRouterIp);
                 TxtRouterCardTitle.Text = hasRouter ? $"ROUTER · {_detectedRouterIp}" : "PC ↔ ROUTER";
-
-                var tRouter = hasRouter
-                    ? _service.PingSingleHostFastAsync(_detectedRouterIp, 900, fallbackTcpPort: 80)
-                    : Task.FromResult<long?>(null);
-                await Task.Delay(35);
-                var tIntranet = _service.PingSingleHostFastAsync("www.arvancloud.ir", 1250, fallbackTcpPort: 443);
-                await Task.Delay(35);
-                var tGlobal = _service.PingSingleHostFastAsync("4.2.2.4", 1250, fallbackTcpPort: 53);
-                var tAdapter = _service.CaptureAdapterTelemetryAsync(targetIface);
-
-                await Task.WhenAll(tGlobal, tIntranet, tRouter, tAdapter);
-                if (_isClosing) return;
-
-                long? msGlobal = tGlobal.Result;
-                long? msIntranet = tIntranet.Result;
-                long? msRouter = tRouter.Result;
-                var snap = tAdapter.Result;
-
-                _globalPingTracker.PushSample(msGlobal);
-                _intranetPingTracker.PushSample(msIntranet);
-                _routerPingTracker.PushSample(msRouter);
-
-                bool isInternetConnected = msGlobal.HasValue || msIntranet.HasValue;
-                HeaderStatusLed.Fill = isInternetConnected ? FrozenGreen : FrozenRed;
-                HeaderStatusGlow.Color = isInternetConnected ? GreenColor : RedColor;
-
-                UpdateLivePingCardUi(_globalPingTracker, TxtPingGlobal, TxtJitterGlobal, TxtStatsGlobal, TxtBadgeGlobal, BarPingGlobal, false, 250.0);
-                UpdateLivePingCardUi(_intranetPingTracker, TxtPingIntranet, TxtJitterIntranet, TxtStatsIntranet, TxtBadgeIntranet, BarPingIntranet, false, 120.0);
-                UpdateLivePingCardUi(_routerPingTracker, TxtPingRouter, TxtJitterRouter, TxtStatsRouter, TxtBadgeRouter, BarPingRouter, true, 50.0, _detectedRouterIp);
-
-                string gStr = msGlobal.HasValue ? $"{msGlobal.Value}ms" : "Timeout";
-                string iStr = msIntranet.HasValue ? $"{msIntranet.Value}ms" : "Timeout";
-                string rStr = !hasRouter ? "N/A" : !msRouter.HasValue ? "Timeout" : msRouter.Value == 0 ? "<1ms" : $"{msRouter.Value}ms";
-
-                _trayManager?.UpdateTooltip($"AionToolPro | 4.2.2.4: {gStr} | Arvan: {iStr} | Router: {rStr}");
 
                 if (snap.Found)
                 {
@@ -868,34 +881,20 @@ namespace AionToolPro.Desktop
                     _lastTxBytes = snap.BytesSent;
                     _lastTick = DateTime.Now;
 
-                    if (_baseInPkts < 0)
+                    long totalInDrops = snap.IncomingPacketsWithErrors + snap.IncomingPacketsDiscarded;
+                    long totalOutDrops = snap.OutgoingPacketsWithErrors + snap.OutgoingPacketsDiscarded;
+
+                    if (_baseInDrops < 0)
                     {
-                        _baseInPkts = snap.UnicastPacketsReceived;
-                        _baseInErrs = snap.IncomingPacketsWithErrors;
-                        _baseOutPkts = snap.UnicastPacketsSent;
-                        _baseOutErrs = snap.OutgoingPacketsWithErrors;
+                        _baseInDrops = totalInDrops;
+                        _baseOutDrops = totalOutDrops;
                     }
 
-                    long deltaInPkts = Math.Max(0, snap.UnicastPacketsReceived - _baseInPkts);
-                    long deltaInErrs = Math.Max(0, snap.IncomingPacketsWithErrors - _baseInErrs);
-                    long deltaOutPkts = Math.Max(0, snap.UnicastPacketsSent - _baseOutPkts);
-                    long deltaOutErrs = Math.Max(0, snap.OutgoingPacketsWithErrors - _baseOutErrs);
+                    long deltaInDrops = Math.Max(0, totalInDrops - _baseInDrops);
+                    long deltaOutDrops = Math.Max(0, totalOutDrops - _baseOutDrops);
+                    _lastNicDropCount = deltaInDrops + deltaOutDrops;
 
-                    double nicInLossPct = (deltaInPkts + deltaInErrs) > 0 ? (deltaInErrs * 100.0 / (deltaInPkts + deltaInErrs)) : 0.0;
-                    double nicOutLossPct = (deltaOutPkts + deltaOutErrs) > 0 ? (deltaOutErrs * 100.0 / (deltaOutPkts + deltaOutErrs)) : 0.0;
-
-                    double pingInLossPct = Math.Min(_globalPingTracker.LossPercent, _intranetPingTracker.LossPercent);
-                    double pingOutLossPct = hasRouter ? _routerPingTracker.LossPercent : nicOutLossPct;
-
-                    double finalInLoss = Math.Round(Math.Max(nicInLossPct, pingInLossPct), 1);
-                    double finalOutLoss = Math.Round(Math.Max(nicOutLossPct, pingOutLossPct), 1);
-
-                    TxtPacketLossIn.Text = $"Loss In: {finalInLoss:F1}% ({deltaInErrs}e)";
-                    TxtPacketLossOut.Text = $"Out: {finalOutLoss:F1}% ({deltaOutErrs}e)";
-
-                    TxtPacketLossIn.Foreground = finalInLoss <= 0.0 ? FrozenGreen : finalInLoss < 5.0 ? FrozenAmber : FrozenRed;
-                    TxtPacketLossOut.Foreground = finalOutLoss <= 0.0 ? FrozenGreen : finalOutLoss < 5.0 ? FrozenAmber : FrozenRed;
-                    BdHeaderPacketLoss.ToolTip = $"Inbound Loss: {finalInLoss:F1}% (NIC Errors: {deltaInErrs} / {deltaInPkts} pkts)  |  Outbound Loss: {finalOutLoss:F1}% (NIC Errors: {deltaOutErrs} / {deltaOutPkts} pkts)";
+                    UpdateHeaderLossIndicator(deltaInDrops, deltaOutDrops);
 
                     TxtDataUsage.Text = $"Rx {rxMb:N1} MB  ·  Tx {txMb:N1} MB";
                     TxtAdapterState.Text = snap.OperationalStatus;
@@ -912,12 +911,11 @@ namespace AionToolPro.Desktop
                         UpdateActiveDnsCardHighlight(primaryDns);
                     }
 
+                    string rStr = FormatShortPing(_routerPingTracker, hasRouter);
                     TxtDashboardAdapterSummary.Text =
                         $"Adaptor: {snap.InterfaceName}   ·   IPv4: {snap.Ipv4Address}   ·   Router: {(hasRouter ? _detectedRouterIp : "None")} · {rStr}\r\n" +
                         $"System DNS: {(snap.DnsServers.Count > 0 ? string.Join(" , ", snap.DnsServers) : "Automatic DHCP")}" +
                         (matchedProvider != null ? $"   ·   {matchedProvider.Name}" : "");
-
-                    TxtHeaderQuickSummary.Text = $"4.2.2.4: {gStr}  ·  arvancloud.ir: {iStr}  ·  Router: {rStr}";
                 }
 
                 if (_autoRefreshAppMonitor && ViewNetworkInfo.Visibility == Visibility.Visible)
@@ -927,12 +925,132 @@ namespace AionToolPro.Desktop
             }
             catch (Exception ex)
             {
-                App.WriteCrashLog("Telemetry", ex);
+                App.WriteCrashLog("NicTelemetry", ex);
             }
             finally
             {
-                _isTelemetryRunning = false;
+                _isNicRunning = false;
             }
+        }
+
+        private async Task RefreshPingTelemetryAsync()
+        {
+            if (_isPingRunning || _isClosing)
+                return;
+
+            bool isHiddenOrMinimized = WindowState == WindowState.Minimized || !IsVisible;
+            _pingTickCounter++;
+
+            // When minimized to tray, keep Tray tooltip alive at low overhead (every ~6s = every 4th tick)
+            if (isHiddenOrMinimized && (_pingTickCounter % 4 != 0))
+                return;
+
+            _isPingRunning = true;
+            try
+            {
+                if (string.IsNullOrEmpty(_detectedRouterIp))
+                {
+                    _detectedRouterIp = await _service.DetectRouterGatewayIpAsync(_selectedInterface);
+                }
+
+                int probeGen = _pingGeneration;
+                string globalTarget = _globalPingTarget;
+                string routerIp = _detectedRouterIp;
+                bool hasRouter = !string.IsNullOrWhiteSpace(routerIp);
+
+                // Enable TCP fallback cleanly when ICMP appears blocked (>=2 consecutive drops or already in TCP mode),
+                // while still probing ICMP first on every tick so recovery is automatic.
+                bool tryGlobalTcp = _globalPingTracker.ConsecutiveTimeouts >= 2 || _globalPingTracker.CurrentTransport == ProbeTransport.TcpFallback;
+                bool tryIntranetTcp = _intranetPingTracker.ConsecutiveTimeouts >= 2 || _intranetPingTracker.CurrentTransport == ProbeTransport.TcpFallback;
+                bool tryRouterTcp = _routerPingTracker.ConsecutiveTimeouts >= 1 || _routerPingTracker.CurrentTransport == ProbeTransport.TcpFallback;
+
+                var tRouter = hasRouter
+                    ? _service.ProbeHostAccurateAsync(routerIp, timeoutMs: 1200, fallbackTcpPorts: new[] { 80, 443 }, allowTcpFallback: tryRouterTcp, treatTcpRefusedAsAlive: true)
+                    : Task.FromResult(new PingProbeResult(null, ProbeTransport.Timeout));
+
+                var tIntranet = _service.ProbeHostAccurateAsync("www.arvancloud.ir", timeoutMs: 2000, fallbackTcpPorts: new[] { 443 }, allowTcpFallback: tryIntranetTcp);
+                var tGlobal = _service.ProbeHostAccurateAsync(globalTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 53 }, allowTcpFallback: tryGlobalTcp);
+
+                await Task.WhenAll(tGlobal, tIntranet, tRouter);
+                if (_isClosing || probeGen != _pingGeneration) return;
+
+                _globalPingTracker.PushProbe(tGlobal.Result);
+                _intranetPingTracker.PushProbe(tIntranet.Result);
+                if (hasRouter)
+                    _routerPingTracker.PushProbe(tRouter.Result);
+
+                string gStr = FormatShortPing(_globalPingTracker, true);
+                string iStr = FormatShortPing(_intranetPingTracker, true);
+                string rStr = FormatShortPing(_routerPingTracker, hasRouter);
+
+                _trayManager?.UpdateTooltip($"AionToolPro | {globalTarget}: {gStr} | Arvan: {iStr} | Router: {rStr}");
+
+                if (isHiddenOrMinimized)
+                    return;
+
+                bool globalOnline = _globalPingTracker.CurrentMs.HasValue || (_globalPingTracker.ConsecutiveTimeouts == 1 && _globalPingTracker.LastValidMs.HasValue);
+                bool intranetOnline = _intranetPingTracker.CurrentMs.HasValue || (_intranetPingTracker.ConsecutiveTimeouts == 1 && _intranetPingTracker.LastValidMs.HasValue);
+                bool isConnected = globalOnline || intranetOnline;
+
+                if (!isConnected)
+                {
+                    HeaderStatusLed.Fill = FrozenRed;
+                    HeaderStatusGlow.Color = RedColor;
+                }
+                else if (_globalPingTracker.LossPercent >= 10.0)
+                {
+                    HeaderStatusLed.Fill = FrozenAmber;
+                    HeaderStatusGlow.Color = AmberColor;
+                }
+                else
+                {
+                    HeaderStatusLed.Fill = FrozenGreen;
+                    HeaderStatusGlow.Color = GreenColor;
+                }
+
+                UpdateLivePingCardUi(_globalPingTracker, TxtPingGlobal, TxtJitterGlobal, TxtStatsGlobal, TxtBadgeGlobal, BarPingGlobal, false, 250.0);
+                UpdateLivePingCardUi(_intranetPingTracker, TxtPingIntranet, TxtJitterIntranet, TxtStatsIntranet, TxtBadgeIntranet, BarPingIntranet, false, 120.0);
+                UpdateLivePingCardUi(_routerPingTracker, TxtPingRouter, TxtJitterRouter, TxtStatsRouter, TxtBadgeRouter, BarPingRouter, true, 50.0, routerIp);
+
+                TxtHeaderQuickSummary.Text = $"{globalTarget}: {gStr}  ·  Arvan: {iStr}  ·  Router: {rStr}";
+                UpdateHeaderLossIndicator(_lastNicDropCount, 0, useCombinedCount: true);
+            }
+            catch (Exception ex)
+            {
+                App.WriteCrashLog("PingTelemetry", ex);
+            }
+            finally
+            {
+                _isPingRunning = false;
+            }
+        }
+
+        private void UpdateHeaderLossIndicator(long dropsA, long dropsB, bool useCombinedCount = false)
+        {
+            double netLoss = _globalPingTracker.HasSample ? _globalPingTracker.LossPercent : 0.0;
+            long totalNicDrops = useCombinedCount ? dropsA : (dropsA + dropsB);
+
+            TxtPacketLossIn.Text = $"Loss: {netLoss:F1}%";
+            TxtPacketLossOut.Text = $"NIC: {totalNicDrops}d";
+
+            TxtPacketLossIn.Foreground = netLoss <= 0.0 ? FrozenGreen : netLoss < 5.0 ? FrozenAmber : FrozenRed;
+            TxtPacketLossOut.Foreground = totalNicDrops == 0 ? FrozenGreen : totalNicDrops < 10 ? FrozenAmber : FrozenRed;
+
+            BdHeaderPacketLoss.ToolTip =
+                $"Global ({_globalPingTarget}) Loss: {_globalPingTracker.LossPercent:F1}% ({_globalPingTracker.LostSamples}/{_globalPingTracker.WindowSamples})\n" +
+                $"Intranet (Arvan) Loss: {_intranetPingTracker.LossPercent:F1}% ({_intranetPingTracker.LostSamples}/{_intranetPingTracker.WindowSamples})\n" +
+                $"Router Loss: {_routerPingTracker.LossPercent:F1}% ({_routerPingTracker.LostSamples}/{_routerPingTracker.WindowSamples})\n" +
+                $"NIC Hardware/Driver Drops (Errors + Discards): {totalNicDrops}";
+        }
+
+        private static string FormatShortPing(PingChannelTracker tracker, bool hasTarget)
+        {
+            if (!hasTarget) return "N/A";
+            if (!tracker.HasSample) return "--";
+            if (!tracker.CurrentMs.HasValue) return "Timeout";
+            long ms = tracker.CurrentMs.Value;
+            string prefix = tracker.CurrentTransport == ProbeTransport.TcpFallback ? "TCP " : "";
+            return ms == 0 ? $"{prefix}<1ms" : $"{prefix}{ms}ms";
         }
 
         private async Task RefreshAppNetworkGridAsync()
@@ -981,6 +1099,16 @@ namespace AionToolPro.Desktop
             double maxScaleMs,
             string routerIpLabel = "")
         {
+            if (isRouterChannel && string.IsNullOrEmpty(routerIpLabel))
+            {
+                txtMainPing.Text = "N/A";
+                txtJitter.Text = "--";
+                txtBadge.Text = "NO GATEWAY";
+                txtStats.Text = "No active router gateway";
+                AnimateBarWidth(gaugeBar, 12);
+                return;
+            }
+
             if (!tracker.HasSample)
             {
                 txtMainPing.Text = "-- ms";
@@ -991,21 +1119,29 @@ namespace AionToolPro.Desktop
 
             if (!tracker.CurrentMs.HasValue)
             {
-                txtMainPing.Text = "TIMEOUT";
-                txtJitter.Text = $"Loss {tracker.LossPercent:F0}%";
-                txtBadge.Text = "OFFLINE";
+                txtMainPing.Text = tracker.ConsecutiveTimeouts == 1 ? "DROP" : "TIMEOUT";
+                txtJitter.Text = $"Loss {tracker.LossPercent:F1}%";
+                txtBadge.Text = tracker.ConsecutiveTimeouts == 1 ? "PACKET DROP" : "OFFLINE";
                 AnimateBarWidth(gaugeBar, 12);
             }
             else
             {
                 long ms = tracker.CurrentMs.Value;
                 txtMainPing.Text = (isRouterChannel && ms == 0) ? "<1 ms" : $"{ms} ms";
-                txtJitter.Text = $"±{tracker.JitterMs ?? 0}ms · L:{tracker.LossPercent:F0}%";
+                txtJitter.Text = $"±{tracker.JitterMs ?? 0}ms · L:{tracker.LossPercent:F1}%";
 
-                if (isRouterChannel)
+                if (tracker.CurrentTransport == ProbeTransport.TcpFallback)
+                {
+                    txtBadge.Text = "TCP ONLY";
+                }
+                else if (isRouterChannel)
+                {
                     txtBadge.Text = ms <= 3 ? "ULTRA LOW" : ms <= 12 ? "WIFI OK" : "HIGH LAG";
+                }
                 else
+                {
                     txtBadge.Text = ms <= 35 ? "EXCELLENT" : ms <= 85 ? "GOOD" : ms <= 150 ? "FAIR" : "HIGH PING";
+                }
 
                 double parentWidth = (gaugeBar.Parent as FrameworkElement)?.ActualWidth ?? 200;
                 if (parentWidth <= 10) parentWidth = 200;
@@ -1013,12 +1149,10 @@ namespace AionToolPro.Desktop
                 AnimateBarWidth(gaugeBar, parentWidth * ratio);
             }
 
-            if (isRouterChannel && string.IsNullOrEmpty(routerIpLabel))
-                txtStats.Text = "No active router gateway";
-            else if (tracker.MinMs.HasValue)
-                txtStats.Text = $"Loss {tracker.LossPercent:F0}% · Min {tracker.MinMs} · Avg {tracker.AvgMs} · Max {tracker.MaxMs}";
+            if (tracker.MinMs.HasValue)
+                txtStats.Text = $"Loss {tracker.LossPercent:F1}% ({tracker.LostSamples}/{tracker.WindowSamples}) · Min {tracker.MinMs} · Avg {tracker.AvgMs} · Max {tracker.MaxMs}";
             else
-                txtStats.Text = $"Loss {tracker.LossPercent:F0}% · Min -- · Avg -- · Max --";
+                txtStats.Text = $"Loss {tracker.LossPercent:F1}% ({tracker.LostSamples}/{tracker.WindowSamples}) · Min -- · Avg -- · Max --";
         }
 
         private static void AnimateBarWidth(Border bar, double targetWidth)
@@ -1069,9 +1203,7 @@ namespace AionToolPro.Desktop
             if (InterfaceCombo.SelectedItem is NetworkAdaptorItem item)
             {
                 _selectedInterface = item.Name;
-                _baseInPkts = -1;
-                _baseOutPkts = -1;
-                _lastTick = DateTime.MinValue;
+                ResetLiveTelemetryBaselines();
                 if (_isInitialized)
                 {
                     SaveCurrentSettings();
@@ -1111,6 +1243,18 @@ namespace AionToolPro.Desktop
             if (!_isInitialized || ComboLanguage.SelectedItem is not ComboBoxItem item || item.Tag is not string langCode) return;
             ApplyLanguage(langCode);
             SaveCurrentSettings();
+        }
+
+        private void ComboGlobalPingTarget_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_isInitialized || ComboGlobalPingTarget.SelectedItem is not ComboBoxItem item || item.Tag is not string target) return;
+            _pingGeneration++;
+            _globalPingTarget = target;
+            _globalPingTracker.Reset();
+            bool fa = _currentLang == "fa";
+            LblPingCard1.Text = fa ? $"پینگ جهانی · {_globalPingTarget}" : $"GLOBAL · {_globalPingTarget}";
+            SaveCurrentSettings();
+            _ = RefreshPingTelemetryAsync();
         }
 
         private void ChkSettings_Changed(object sender, RoutedEventArgs e)
@@ -1153,7 +1297,8 @@ namespace AionToolPro.Desktop
                     ChkDarkMode.IsChecked == true,
                     _currentLang,
                     _currentSurface.Id,
-                    ChkMinimizeToTray.IsChecked == true);
+                    ChkMinimizeToTray.IsChecked == true,
+                    _globalPingTarget);
 
                 var res = await _service.ExportSettingsBundleAsync(dlg.FileName, current);
                 MessageBox.Show(res.Message, "Export Settings", MessageBoxButton.OK, res.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.8.3-5865F2?style=for-the-badge" alt="Version 0.8.3" />
+  <img src="https://img.shields.io/badge/Version-0.8.4-5865F2?style=for-the-badge" alt="Version 0.8.4" />
   <img src="https://img.shields.io/badge/.NET-8.0%20WPF-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 8.0 WPF" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10/11 x64" />
   <img src="https://img.shields.io/badge/License-GPL--3.0-10B981?style=for-the-badge" alt="GPL-3.0 License" />
@@ -31,7 +31,7 @@
 
 | Module | Capabilities |
 | :--- | :--- |
-| **Live Telemetry Strip** | Real-time Global (`4.2.2.4`), Intranet (`arvancloud.ir`), and auto-detected Local Router gateway latency, jitter, packet loss, and live download/upload speedometers. |
+| **Live Telemetry Strip** | Real-time Global (selectable, default `1.1.1.1`), Intranet (`arvancloud.ir`), and auto-detected Local Router gateway latency, jitter, packet loss, and live download/upload speedometers. |
 | **DNS Studio &amp; Custom Profiles** | 22 built-in Iranian anti-sanction, gaming, privacy, and global DNS presets plus persistent custom DNS profiles, automatic IPv6 leak cleanup, non-destructive JSON backups, and one-click DHCP reset. |
 | **True UDP/53 DNS Benchmark** | Sends native RFC 1035 DNS A-record queries over UDP port 53 across all resolvers concurrently with zero external NuGet dependencies. |
 | **Encrypted DoH (Windows 11)** | Enables native Windows 11 DNS-over-HTTPS (`udpfallback=yes`) for Cloudflare, Google, and Quad9 with scoped removal that preserves user-defined rules. |
@@ -51,10 +51,10 @@
 
 ## Installation
 
-1. Download the latest `AionToolPro_Setup_v0.8.3.exe` and `checksums.txt` from the [GitHub Releases](https://github.com/Yoqaizo/AionToolPro/releases/latest) page.
+1. Download the latest `AionToolPro_Setup_v0.8.4.exe` and `checksums.txt` from the [GitHub Releases](https://github.com/Yoqaizo/AionToolPro/releases/latest) page.
 2. *(Optional)* Verify the installer integrity in PowerShell:
    ```powershell
-   Get-FileHash .\AionToolPro_Setup_v0.8.3.exe -Algorithm SHA256
+   Get-FileHash .\AionToolPro_Setup_v0.8.4.exe -Algorithm SHA256
    ```
 3. Run the installer and follow the setup wizard.
 

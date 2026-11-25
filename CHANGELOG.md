@@ -4,6 +4,19 @@ All notable changes to **AionToolPro** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] - 2026-11-25
+
+### Changed & Improved
+- **System-Grade Ping & Packet Loss Engine:** Replaced rate-limited `4.2.2.4` default with Cloudflare `1.1.1.1` (plus selectable Global Ping Server in Settings: `1.1.1.1`, `8.8.8.8`, `9.9.9.9`, `4.2.2.4`). Upgraded ICMP probes to standard Windows 32-byte payload, `TTL=128`, `2000ms` timeout, and removed hidden ICMP retries so packet loss matches real `ping.exe` measurements.
+- **Honest 40-Sample Sliding-Window Loss & RFC 3550 Jitter:** Removed false first-drop masking in `PingChannelTracker`, replaced instant two-sample jitter with RFC 3550 smoothed jitter, and replaced misleading header `Loss In / Out` (`Math.Min`) with real Global `Loss %` and live NIC hardware/driver drops (`Errors + Discards`).
+- **Clean ICMP vs. TCP Fallback Separation:** Detects ICMP-blocked networks (e.g., VPN TUN mode or strict router firewalls) cleanly with a `TCP ONLY` badge instead of false `OFFLINE` alerts, and treats active router `TCP RST` (`ConnectionRefused`) responses as alive with accurate LAN RTT.
+- **Decoupled 1s NIC Telemetry & Background Tray Updates:** Separated the 1-second NIC speedometer/stats timer from the 1.5-second ping loop so download/upload speeds never freeze during ping timeouts, merged adapter + gateway polling into one unified snapshot, and added lightweight Tray tooltip ping updates when minimized.
+
+### Fixed
+- **Zero Disk I/O in Telemetry Loop:** Added thread-safe in-memory caching for custom DNS profiles (`custom_dns.json`) so telemetry ticks never read disk synchronously.
+- **Clean Reset on Adapter Switch:** Switching network adapters now resets all 3 ping trackers, byte deltas, and NIC drop baselines to prevent stale statistics and false speed spikes.
+- **Native Win32 OEM Console Decoder:** Added a zero-dependency `kernel32.dll` (`GetOEMCP` + `MultiByteToWideChar`) fallback in `ProcessRunner` so non-English Windows console output decodes accurately in self-contained single-file `.NET 8` builds.
+
 ## [0.8.3] - 2026-11-21
 
 ### Added

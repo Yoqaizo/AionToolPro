@@ -39,7 +39,7 @@ namespace AionToolPro.Desktop.Services
 
         private CancellationTokenSource? _activeOperationCts;
 
-        private static readonly byte[] FastPingPayload16 = new byte[16];
+        private static readonly byte[] StandardPingPayload32 = Encoding.ASCII.GetBytes("abcdefghijklmnopqrstuvwabcdefghi");
         private readonly ConcurrentDictionary<string, (IPAddress Ip, DateTime ExpiresUtc)> _dnsResolveCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<int, (string Name, string Path, DateTime CachedUtc)> _pidCache = new();
 
@@ -67,7 +67,7 @@ namespace AionToolPro.Desktop.Services
         public static string GetAppVersionString()
         {
             var v = Assembly.GetExecutingAssembly().GetName().Version;
-            if (v == null) return "0.8.3";
+            if (v == null) return "0.8.4";
             return $"{Math.Max(0, v.Major)}.{Math.Max(0, v.Minor)}.{Math.Max(0, v.Build)}";
         }
 
@@ -350,11 +350,30 @@ namespace AionToolPro.Desktop.Services
             {
                 try
                 {
-                    var nic = NetworkInterface.GetAllNetworkInterfaces()
-                        .FirstOrDefault(n => n.Name.Equals(interfaceName, StringComparison.OrdinalIgnoreCase));
+                    var allNics = NetworkInterface.GetAllNetworkInterfaces();
+                    var nic = allNics.FirstOrDefault(n => n.Name.Equals(interfaceName, StringComparison.OrdinalIgnoreCase));
+
+                    // Detect gateway for selected adapter, or fall back to any active non-loopback adapter
+                    string gatewayIp = string.Empty;
+                    if (nic != null)
+                    {
+                        var gw = nic.GetIPProperties().GatewayAddresses
+                            .FirstOrDefault(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.Any.Equals(g.Address));
+                        if (gw != null) gatewayIp = gw.Address.ToString();
+                    }
+                    if (string.IsNullOrEmpty(gatewayIp))
+                    {
+                        foreach (var candidate in allNics.Where(n => n.NetworkInterfaceType != NetworkInterfaceType.Loopback && n.OperationalStatus == OperationalStatus.Up))
+                        {
+                            var gw = candidate.GetIPProperties().GatewayAddresses
+                                .FirstOrDefault(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.Any.Equals(g.Address));
+                            if (gw != null) { gatewayIp = gw.Address.ToString(); break; }
+                        }
+                    }
+
                     if (nic == null)
                     {
-                        return new AdapterTelemetrySnapshot(interfaceName, false, "Unavailable", 0, 0, 0, 0, 0, 0, new List<string>(), "N/A");
+                        return new AdapterTelemetrySnapshot(interfaceName, false, "Unavailable", 0, 0, 0, 0, 0, 0, 0, 0, new List<string>(), "N/A", gatewayIp);
                     }
 
                     var stats = nic.GetIPStatistics();
@@ -375,19 +394,24 @@ namespace AionToolPro.Desktop.Services
                         stats.BytesSent,
                         stats.UnicastPacketsReceived,
                         stats.IncomingPacketsWithErrors,
+                        stats.IncomingPacketsDiscarded,
                         stats.UnicastPacketsSent,
                         stats.OutgoingPacketsWithErrors,
+                        stats.OutgoingPacketsDiscarded,
                         dnsServers,
-                        ipv4);
+                        ipv4,
+                        gatewayIp);
                 }
                 catch
                 {
-                    return new AdapterTelemetrySnapshot(interfaceName, false, "Error", 0, 0, 0, 0, 0, 0, new List<string>(), "N/A");
+                    return new AdapterTelemetrySnapshot(interfaceName, false, "Error", 0, 0, 0, 0, 0, 0, 0, 0, new List<string>(), "N/A", string.Empty);
                 }
             });
         }
 
         // ==================== FAST PING & NATIVE RFC 1035 UDP/53 DNS QUERY ====================
+        public void ClearDnsResolveCache() => _dnsResolveCache.Clear();
+
         private async Task<IPAddress?> ResolveHostCachedAsync(string hostOrIp)
         {
             if (IPAddress.TryParse(hostOrIp, out var directIp))
@@ -422,15 +446,24 @@ namespace AionToolPro.Desktop.Services
             return null;
         }
 
-        private static async Task<long?> MeasureTcpHandshakeMsAsync(IPAddress targetIp, int port, int timeoutMs)
+        /// <summary>
+        /// Measures TCP reachability RTT. Treats TCP RST (ConnectionRefused) as REACHABLE
+        /// because receiving an active RST proves the host/router is online and yields exact LAN/WAN RTT.
+        /// </summary>
+        private static async Task<long?> MeasureTcpReachabilityMsAsync(IPAddress targetIp, int port, int timeoutMs, bool treatRefusedAsAlive = false)
         {
             if (port <= 0) return null;
+            var sw = Stopwatch.StartNew();
             try
             {
                 using var tcp = new Socket(targetIp.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
                 using var cts = new CancellationTokenSource(timeoutMs);
-                var sw = Stopwatch.StartNew();
                 await tcp.ConnectAsync(new IPEndPoint(targetIp, port), cts.Token).ConfigureAwait(false);
+                sw.Stop();
+                return sw.ElapsedMilliseconds;
+            }
+            catch (SocketException sex) when (treatRefusedAsAlive && sex.SocketErrorCode == SocketError.ConnectionRefused)
+            {
                 sw.Stop();
                 return sw.ElapsedMilliseconds;
             }
@@ -440,37 +473,59 @@ namespace AionToolPro.Desktop.Services
             }
         }
 
-        public async Task<long?> PingSingleHostFastAsync(string hostOrIp, int timeoutMs = 1200, int fallbackTcpPort = 0)
+        /// <summary>
+        /// System-grade accurate single-shot ICMP probe (32-byte Windows payload, TTL=128, 2000ms default).
+        /// Never performs hidden ICMP retries so packet loss matches real ping.exe behavior.
+        /// When allowTcpFallback is enabled (e.g., ICMP blocked by VPN TUN or router firewall),
+        /// falls back transparently to TCP reachability and labels the result as ProbeTransport.TcpFallback.
+        /// </summary>
+        public async Task<PingProbeResult> ProbeHostAccurateAsync(
+            string hostOrIp,
+            int timeoutMs = 2000,
+            int[]? fallbackTcpPorts = null,
+            bool allowTcpFallback = false,
+            bool treatTcpRefusedAsAlive = false)
         {
-            if (string.IsNullOrWhiteSpace(hostOrIp)) return null;
-            var targetIp = await ResolveHostCachedAsync(hostOrIp).ConfigureAwait(false);
-            if (targetIp == null) return null;
+            if (string.IsNullOrWhiteSpace(hostOrIp))
+                return new PingProbeResult(null, ProbeTransport.Timeout);
 
-            var opts = new PingOptions(64, false);
+            var targetIp = await ResolveHostCachedAsync(hostOrIp).ConfigureAwait(false);
+            if (targetIp == null)
+                return new PingProbeResult(null, ProbeTransport.Timeout);
+
+            var opts = new PingOptions(128, false);
             try
             {
                 using var pinger = new Ping();
-                var reply = await pinger.SendPingAsync(targetIp, timeoutMs, FastPingPayload16, opts).ConfigureAwait(false);
-                if (reply.Status == IPStatus.Success) return reply.RoundtripTime;
+                var reply = await pinger.SendPingAsync(targetIp, timeoutMs, StandardPingPayload32, opts).ConfigureAwait(false);
+                if (reply.Status == IPStatus.Success)
+                {
+                    return new PingProbeResult(reply.RoundtripTime, ProbeTransport.Icmp);
+                }
             }
             catch { }
 
-            await Task.Delay(35).ConfigureAwait(false);
-            try
+            if (allowTcpFallback && fallbackTcpPorts != null && fallbackTcpPorts.Length > 0)
             {
-                using var pingerRetry = new Ping();
-                int retryTimeout = Math.Max(700, timeoutMs - 250);
-                var reply2 = await pingerRetry.SendPingAsync(targetIp, retryTimeout, FastPingPayload16, opts).ConfigureAwait(false);
-                if (reply2.Status == IPStatus.Success) return reply2.RoundtripTime;
-            }
-            catch { }
-
-            if (fallbackTcpPort > 0)
-            {
-                return await MeasureTcpHandshakeMsAsync(targetIp, fallbackTcpPort, 750).ConfigureAwait(false);
+                int tcpTimeout = Math.Min(1200, Math.Max(600, timeoutMs / 2));
+                foreach (int port in fallbackTcpPorts)
+                {
+                    long? tcpMs = await MeasureTcpReachabilityMsAsync(targetIp, port, tcpTimeout, treatTcpRefusedAsAlive).ConfigureAwait(false);
+                    if (tcpMs.HasValue)
+                    {
+                        return new PingProbeResult(tcpMs.Value, ProbeTransport.TcpFallback);
+                    }
+                }
             }
 
-            return null;
+            return new PingProbeResult(null, ProbeTransport.Timeout);
+        }
+
+        public async Task<long?> PingSingleHostFastAsync(string hostOrIp, int timeoutMs = 2000, int fallbackTcpPort = 0)
+        {
+            int[]? ports = fallbackTcpPort > 0 ? new[] { fallbackTcpPort } : null;
+            var res = await ProbeHostAccurateAsync(hostOrIp, timeoutMs, ports, allowTcpFallback: fallbackTcpPort > 0, treatTcpRefusedAsAlive: false).ConfigureAwait(false);
+            return res.RttMs;
         }
 
         public static async Task<long?> QueryDnsUdpLatencyMsAsync(string dnsServerIp, string domain, int timeoutMs, CancellationToken token = default)
@@ -533,7 +588,7 @@ namespace AionToolPro.Desktop.Services
         }
 
         // ==================== SETTINGS, EXPORT/IMPORT & ACTION LOG ====================
-        public void SaveSettings(int themeId, string interfaceName, bool isDarkMode, string languageCode, int surfacePaletteId = 0, bool minimizeToTray = false)
+        public void SaveSettings(int themeId, string interfaceName, bool isDarkMode, string languageCode, int surfacePaletteId = 0, bool minimizeToTray = false, string globalPingTarget = "1.1.1.1")
         {
             lock (_ioLock)
             {
@@ -547,7 +602,8 @@ namespace AionToolPro.Desktop.Services
                     }
 
                     Directory.CreateDirectory(_cfgDir);
-                    var model = new AppSettingsModel(themeId, interfaceName, EnableActionLog, isDarkMode, languageCode, surfacePaletteId, minimizeToTray);
+                    string safeTarget = ValidateHostOrIp(globalPingTarget) ? globalPingTarget.Trim() : "1.1.1.1";
+                    var model = new AppSettingsModel(themeId, interfaceName, EnableActionLog, isDarkMode, languageCode, surfacePaletteId, minimizeToTray, safeTarget);
                     string tmp = ConfigFilePath + ".tmp";
                     File.WriteAllText(tmp, JsonSerializer.Serialize(model, JsonOpts), new UTF8Encoding(false));
                     if (File.Exists(ConfigFilePath))
@@ -587,7 +643,7 @@ namespace AionToolPro.Desktop.Services
                             else if (k.Equals("dark", StringComparison.OrdinalIgnoreCase)) dark = v != "0";
                             else if (k.Equals("lang", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(v)) lang = v;
                         }
-                        return new AppSettingsModel(theme, iface, log, dark, lang, surface, false);
+                        return new AppSettingsModel(theme, iface, log, dark, lang, surface, false, "1.1.1.1");
                     }
                 }
                 catch { }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,13 +33,101 @@ namespace AionToolPro.Desktop.Services
             TimeSpan? timeout = null);
     }
 
+    /// <summary>
+    /// Native Win32 codepage decoder using kernel32 MultiByteToWideChar so OEM console outputs
+    /// decode accurately in self-contained .NET 8 single-file builds without extra NuGet packages.
+    /// </summary>
+    internal sealed class Win32CodePageEncoding : Encoding
+    {
+        private readonly uint _codePage;
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetOEMCP();
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern int MultiByteToWideChar(
+            uint codePage,
+            uint dwFlags,
+            byte[] lpMultiByteStr,
+            int cbMultiByte,
+            char[]? lpWideCharStr,
+            int cchWideChar);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern int WideCharToMultiByte(
+            uint codePage,
+            uint dwFlags,
+            char[] lpWideCharStr,
+            int cchWideChar,
+            byte[]? lpMultiByteStr,
+            int cbMultiByte,
+            IntPtr lpDefaultChar,
+            IntPtr lpUsedDefaultChar);
+
+        public static Encoding CreateSystemOem()
+        {
+            uint cp = 437;
+            try { cp = GetOEMCP(); } catch { }
+            return new Win32CodePageEncoding(cp == 0 ? 437u : cp);
+        }
+
+        public Win32CodePageEncoding(uint codePage) => _codePage = codePage;
+
+        public override int GetByteCount(char[] chars, int index, int count)
+        {
+            if (chars == null || count <= 0) return 0;
+            char[] slice = index == 0 && count == chars.Length ? chars : chars[index..(index + count)];
+            int len = WideCharToMultiByte(_codePage, 0, slice, slice.Length, null, 0, IntPtr.Zero, IntPtr.Zero);
+            return Math.Max(0, len);
+        }
+
+        public override int GetBytes(char[] chars, int charIndex, int charCount, byte[] bytes, int byteIndex)
+        {
+            if (chars == null || bytes == null || charCount <= 0) return 0;
+            char[] slice = charIndex == 0 && charCount == chars.Length ? chars : chars[charIndex..(charIndex + charCount)];
+            int needed = WideCharToMultiByte(_codePage, 0, slice, slice.Length, null, 0, IntPtr.Zero, IntPtr.Zero);
+            if (needed <= 0) return 0;
+            byte[] buf = new byte[needed];
+            int written = WideCharToMultiByte(_codePage, 0, slice, slice.Length, buf, needed, IntPtr.Zero, IntPtr.Zero);
+            if (written <= 0) return 0;
+            int copied = Math.Min(written, Math.Max(0, bytes.Length - byteIndex));
+            if (copied > 0) Buffer.BlockCopy(buf, 0, bytes, byteIndex, copied);
+            return copied;
+        }
+
+        public override int GetCharCount(byte[] bytes, int index, int count)
+        {
+            if (bytes == null || count <= 0) return 0;
+            byte[] slice = index == 0 && count == bytes.Length ? bytes : bytes[index..(index + count)];
+            int len = MultiByteToWideChar(_codePage, 0, slice, slice.Length, null, 0);
+            return Math.Max(0, len);
+        }
+
+        public override int GetChars(byte[] bytes, int byteIndex, int byteCount, char[] chars, int charIndex)
+        {
+            if (bytes == null || chars == null || byteCount <= 0) return 0;
+            byte[] slice = byteIndex == 0 && byteCount == bytes.Length ? bytes : bytes[byteIndex..(byteIndex + byteCount)];
+            int needed = MultiByteToWideChar(_codePage, 0, slice, slice.Length, null, 0);
+            if (needed <= 0) return 0;
+            char[] buf = new char[needed];
+            int written = MultiByteToWideChar(_codePage, 0, slice, slice.Length, buf, needed);
+            if (written <= 0) return 0;
+            int copied = Math.Min(written, Math.Max(0, chars.Length - charIndex));
+            if (copied > 0) Array.Copy(buf, 0, chars, charIndex, copied);
+            return copied;
+        }
+
+        public override int GetMaxByteCount(int charCount) => (charCount + 1) * 4;
+        public override int GetMaxCharCount(int byteCount) => (byteCount * 2) + 1;
+    }
+
     public sealed class ProcessRunner : IProcessRunner
     {
         private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(90);
+        private static readonly Encoding OemConsoleEncoding = InitializeOemEncoding();
 
-        static ProcessRunner()
+        private static Encoding InitializeOemEncoding()
         {
-            // Register Windows OEM/ANSI code pages (437, 850, 720, 1256, etc.) in .NET 8 without extra NuGet packages
             try
             {
                 var providerType = Type.GetType("System.Text.CodePagesEncodingProvider, System.Text.Encoding.CodePages");
@@ -47,8 +136,19 @@ namespace AionToolPro.Desktop.Services
                 {
                     Encoding.RegisterProvider(provider);
                 }
+                return Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
             }
-            catch { }
+            catch
+            {
+                try
+                {
+                    return Win32CodePageEncoding.CreateSystemOem();
+                }
+                catch
+                {
+                    return Encoding.UTF8;
+                }
+            }
         }
 
         public string ResolveSystemExecutable(string executableName)
@@ -103,15 +203,7 @@ namespace AionToolPro.Desktop.Services
             {
                 return Encoding.Unicode;
             }
-
-            try
-            {
-                return Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage);
-            }
-            catch
-            {
-                return Encoding.UTF8;
-            }
+            return OemConsoleEncoding;
         }
 
         public async Task<ProcessResult> RunAsync(

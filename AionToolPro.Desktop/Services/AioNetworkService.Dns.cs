@@ -16,20 +16,33 @@ namespace AionToolPro.Desktop.Services
 {
     public sealed partial class AioNetworkService
     {
-        // ==================== CUSTOM DNS PROFILES ====================
+        // ==================== CUSTOM DNS PROFILES (IN-MEMORY CACHED) ====================
+        private List<CustomDnsProfile>? _customDnsCache;
+        private List<DnsProviderModel>? _allProvidersCache;
+
         public List<CustomDnsProfile> GetCustomDnsProfiles()
         {
             lock (_ioLock)
             {
+                if (_customDnsCache != null)
+                    return new List<CustomDnsProfile>(_customDnsCache);
+
                 try
                 {
-                    if (!File.Exists(CustomDnsFilePath)) return new List<CustomDnsProfile>();
-                    return JsonSerializer.Deserialize<List<CustomDnsProfile>>(File.ReadAllText(CustomDnsFilePath)) ?? new List<CustomDnsProfile>();
+                    if (!File.Exists(CustomDnsFilePath))
+                    {
+                        _customDnsCache = new List<CustomDnsProfile>();
+                    }
+                    else
+                    {
+                        _customDnsCache = JsonSerializer.Deserialize<List<CustomDnsProfile>>(File.ReadAllText(CustomDnsFilePath)) ?? new List<CustomDnsProfile>();
+                    }
                 }
                 catch
                 {
-                    return new List<CustomDnsProfile>();
+                    _customDnsCache = new List<CustomDnsProfile>();
                 }
+                return new List<CustomDnsProfile>(_customDnsCache);
             }
         }
 
@@ -37,6 +50,8 @@ namespace AionToolPro.Desktop.Services
         {
             lock (_ioLock)
             {
+                _customDnsCache = new List<CustomDnsProfile>(profiles);
+                _allProvidersCache = null;
                 try
                 {
                     Directory.CreateDirectory(_cfgDir);
@@ -81,19 +96,28 @@ namespace AionToolPro.Desktop.Services
 
         public List<DnsProviderModel> GetAllDnsProviders()
         {
-            var all = new List<DnsProviderModel>(AioCatalog.DnsProviders);
-            int nextIndex = all.Count + 1;
-            foreach (var c in GetCustomDnsProfiles())
+            lock (_ioLock)
             {
-                all.Add(new DnsProviderModel(
-                    nextIndex++,
-                    c.Name,
-                    c.PrimaryIp,
-                    string.IsNullOrWhiteSpace(c.SecondaryIp) ? c.PrimaryIp : c.SecondaryIp,
-                    DnsGroupColor.OrangeAntiFilter,
-                    string.IsNullOrWhiteSpace(c.Description) ? "Saved custom DNS profile" : c.Description));
+                if (_allProvidersCache != null)
+                    return _allProvidersCache;
+
+                var custom = GetCustomDnsProfiles();
+                var all = new List<DnsProviderModel>(AioCatalog.DnsProviders.Count + custom.Count);
+                all.AddRange(AioCatalog.DnsProviders);
+                int nextIndex = all.Count + 1;
+                foreach (var c in custom)
+                {
+                    all.Add(new DnsProviderModel(
+                        nextIndex++,
+                        c.Name,
+                        c.PrimaryIp,
+                        string.IsNullOrWhiteSpace(c.SecondaryIp) ? c.PrimaryIp : c.SecondaryIp,
+                        DnsGroupColor.OrangeAntiFilter,
+                        string.IsNullOrWhiteSpace(c.Description) ? "Saved custom DNS profile" : c.Description));
+                }
+                _allProvidersCache = all;
+                return all;
             }
-            return all;
         }
 
         // ==================== DNS CONFIGURATION (WITH IPV6 LEAK/STICKING FIX) ====================
@@ -174,6 +198,7 @@ namespace AionToolPro.Desktop.Services
             }
 
             await ExecAsync("ipconfig", new[] { "/flushdns" }, token, silent: true).ConfigureAwait(false);
+            ClearDnsResolveCache();
 
             long? verifyMs = await QueryDnsUdpLatencyMsAsync(primaryDns, "google.com", 3000, token).ConfigureAwait(false);
             string verifyNote = verifyMs.HasValue
@@ -204,6 +229,7 @@ namespace AionToolPro.Desktop.Services
             var r1 = await ExecAsync("netsh", new[] { "interface", "ip", "set", "dnsservers", $"name={interfaceName}", "source=dhcp" }, token).ConfigureAwait(false);
             await ExecAsync("netsh", new[] { "interface", "ipv6", "set", "dnsservers", $"name={interfaceName}", "source=dhcp" }, token, silent: true).ConfigureAwait(false);
             await ExecAsync("ipconfig", new[] { "/flushdns" }, token, silent: true).ConfigureAwait(false);
+            ClearDnsResolveCache();
             await ExecAsync("ipconfig", new[] { "/registerdns" }, token, silent: true).ConfigureAwait(false);
             WriteActionLog(interfaceName, $"{(r1.IsSuccess ? "OK" : "FAILED")} Reset DNS to automatic DHCP (exit={r1.ExitCode})");
             return new OperationResult(r1.IsSuccess, r1.IsSuccess ? "DNS reset to automatic DHCP." : r1.StandardOutput, r1.ExitCode);
@@ -212,6 +238,7 @@ namespace AionToolPro.Desktop.Services
         public async Task<OperationResult> FlushDnsCacheAsync(string interfaceName, CancellationToken token = default)
         {
             var res = await ExecAsync("ipconfig", new[] { "/flushdns" }, token).ConfigureAwait(false);
+            ClearDnsResolveCache();
             WriteActionLog(interfaceName, $"{(res.IsSuccess ? "OK" : "FAILED")} Flushed DNS cache");
             return new OperationResult(res.IsSuccess, res.StandardOutput, res.ExitCode);
         }

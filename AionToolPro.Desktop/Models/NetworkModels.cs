@@ -163,6 +163,20 @@ namespace AionToolPro.Desktop.Models
         string Message,
         int ExitCode = 0);
 
+    public enum ProbeTransport
+    {
+        Icmp = 0,
+        TcpFallback = 1,
+        Timeout = 2
+    }
+
+    public sealed record PingProbeResult(
+        long? RttMs,
+        ProbeTransport Transport)
+    {
+        public bool IsReachable => RttMs.HasValue && Transport != ProbeTransport.Timeout;
+    }
+
     public sealed record AppSettingsModel(
         int ThemeId = 1,
         string? InterfaceName = null,
@@ -170,7 +184,8 @@ namespace AionToolPro.Desktop.Models
         bool IsDarkMode = true,
         string LanguageCode = "en",
         int SurfacePaletteId = 0,
-        bool MinimizeToTray = false);
+        bool MinimizeToTray = false,
+        string GlobalPingTarget = "1.1.1.1");
 
     public sealed record CustomDnsProfile(
         string Name,
@@ -200,49 +215,82 @@ namespace AionToolPro.Desktop.Models
         long BytesSent,
         long UnicastPacketsReceived,
         long IncomingPacketsWithErrors,
+        long IncomingPacketsDiscarded,
         long UnicastPacketsSent,
         long OutgoingPacketsWithErrors,
+        long OutgoingPacketsDiscarded,
         List<string> DnsServers,
-        string Ipv4Address);
+        string Ipv4Address,
+        string GatewayIp);
 
+    /// <summary>
+    /// Accurate sliding-window telemetry tracker:
+    /// - Records every single probe honestly (never masks transient packet loss).
+    /// - Uses RFC 3550 smoothed jitter (J = J + (|D| - J) / 16) for stable, realistic readings.
+    /// - Distinguishes pure ICMP loss from ICMP-blocked networks where TCP is healthy.
+    /// </summary>
     public sealed class PingChannelTracker
     {
         private readonly Queue<long?> _samples = new();
         private long? _lastValidPing;
-        private int _consecutiveTimeouts;
+        private double _rfcJitter;
+        private bool _hasJitter;
 
-        public int MaxSamples { get; } = 30;
+        public int MaxSamples { get; } = 40;
         public bool HasSample { get; private set; }
         public long? CurrentMs { get; private set; }
-        public long? JitterMs { get; private set; }
+        public ProbeTransport CurrentTransport { get; private set; } = ProbeTransport.Timeout;
+        public int ConsecutiveTimeouts { get; private set; }
+        public long? LastValidMs => _lastValidPing;
+        public long? JitterMs => _hasJitter ? (long)Math.Round(_rfcJitter) : null;
         public long? MinMs { get; private set; }
         public long? AvgMs { get; private set; }
         public long? MaxMs { get; private set; }
+        public int WindowSamples => _samples.Count;
         public int LostSamples { get; private set; }
         public double LossPercent { get; private set; }
 
-        public void PushSample(long? ms)
+        public void Reset()
+        {
+            _samples.Clear();
+            _lastValidPing = null;
+            _rfcJitter = 0;
+            _hasJitter = false;
+            HasSample = false;
+            CurrentMs = null;
+            CurrentTransport = ProbeTransport.Timeout;
+            ConsecutiveTimeouts = 0;
+            MinMs = null;
+            AvgMs = null;
+            MaxMs = null;
+            LostSamples = 0;
+            LossPercent = 0.0;
+        }
+
+        public void PushProbe(PingProbeResult probe)
         {
             HasSample = true;
+            CurrentTransport = probe.Transport;
 
-            if (ms.HasValue && ms.Value >= 0)
+            if (probe.IsReachable && probe.RttMs.HasValue && probe.RttMs.Value >= 0)
             {
-                _consecutiveTimeouts = 0;
-                CurrentMs = ms.Value;
+                long ms = probe.RttMs.Value;
+                ConsecutiveTimeouts = 0;
+                CurrentMs = ms;
+
                 if (_lastValidPing.HasValue)
-                    JitterMs = Math.Abs(ms.Value - _lastValidPing.Value);
-                _lastValidPing = ms.Value;
-                _samples.Enqueue(ms.Value);
+                {
+                    double diff = Math.Abs(ms - _lastValidPing.Value);
+                    _rfcJitter = _hasJitter ? _rfcJitter + (diff - _rfcJitter) / 16.0 : diff;
+                    _hasJitter = true;
+                }
+
+                _lastValidPing = ms;
+                _samples.Enqueue(ms);
             }
             else
             {
-                _consecutiveTimeouts++;
-                if (_consecutiveTimeouts == 1 && _lastValidPing.HasValue)
-                {
-                    CurrentMs = _lastValidPing.Value;
-                    return;
-                }
-
+                ConsecutiveTimeouts++;
                 CurrentMs = null;
                 _samples.Enqueue(null);
             }
@@ -286,7 +334,8 @@ namespace AionToolPro.Desktop.Models
                 MinMs = null;
                 MaxMs = null;
                 AvgMs = null;
-                JitterMs = null;
+                _hasJitter = false;
+                _rfcJitter = 0;
             }
         }
     }
