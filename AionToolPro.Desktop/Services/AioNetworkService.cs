@@ -3,12 +3,14 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Text;
@@ -56,8 +58,66 @@ namespace AionToolPro.Desktop.Services
         private static readonly string[] IgnoredAdapterKeywords =
         {
             "Loopback", "vEthernet", "WSL", "Hyper-V", "VMware", "VirtualBox",
-            "Teredo", "ISATAP", "6to4", "Bluetooth", "Miniport", "Filter", "Kernel Debug"
+            "Teredo", "ISATAP", "6to4", "Bluetooth", "Miniport", "Filter", "Kernel Debug",
+            "Wi-Fi Direct", "Local Area Connection*", "KM-TEST", "Npcap", "Pseudo",
+            "Virtual", "TAP-Windows", "Wintun", "WireGuard", "OpenVPN", "ZeroTier",
+            "Hamachi", "Radmin", "Tailscale", "NordLynx", "CloudflareWARP", "WARP",
+            "Clash", "sing-tun", "sing-box", "utun", "Nekoray", "NekoBox", "mihomo",
+            "v2ray", "xray", "Mullvad", "Proton", "Windscribe", "Async", "RAS", "QoS"
         };
+
+        private static readonly string[] VpnTunKeywords =
+        {
+            "Wintun", "WireGuard", "TAP-Windows", "OpenVPN", "sing-tun", "sing-box",
+            "Clash", "mihomo", "Nekoray", "NekoBox", "v2ray", "xray", "WARP",
+            "CloudflareWARP", "NordLynx", "Tailscale", "Mullvad", "Proton", "Windscribe", "utun"
+        };
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IP_OPTION_INFORMATION
+        {
+            public byte Ttl;
+            public byte Tos;
+            public byte Flags;
+            public byte OptionsSize;
+            public IntPtr OptionsData;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ICMP_ECHO_REPLY
+        {
+            public uint Address;
+            public uint Status;
+            public uint RoundTripTime;
+            public ushort DataSize;
+            public ushort Reserved;
+            public IntPtr Data;
+            public IP_OPTION_INFORMATION Options;
+        }
+
+        [DllImport("iphlpapi.dll", SetLastError = true)]
+        private static extern uint GetBestInterface(uint dwDestAddr, out uint pdwBestIfIndex);
+
+        [DllImport("iphlpapi.dll", SetLastError = true)]
+        private static extern IntPtr IcmpCreateFile();
+
+        [DllImport("iphlpapi.dll", SetLastError = true)]
+        private static extern bool IcmpCloseHandle(IntPtr icmpHandle);
+
+        [DllImport("iphlpapi.dll", SetLastError = true)]
+        private static extern uint IcmpSendEcho2Ex(
+            IntPtr icmpHandle,
+            IntPtr eventHandle,
+            IntPtr apcRoutine,
+            IntPtr apcContext,
+            uint sourceAddress,
+            uint destinationAddress,
+            byte[] requestData,
+            ushort requestSize,
+            ref IP_OPTION_INFORMATION requestOptions,
+            IntPtr replyBuffer,
+            uint replySize,
+            uint timeout);
 
         public AioNetworkService(IProcessRunner? runner = null)
         {
@@ -67,7 +127,7 @@ namespace AionToolPro.Desktop.Services
         public static string GetAppVersionString()
         {
             var v = Assembly.GetExecutingAssembly().GetName().Version;
-            if (v == null) return "0.9.1";
+            if (v == null) return "0.9.2";
             return $"{Math.Max(0, v.Major)}.{Math.Max(0, v.Minor)}.{Math.Max(0, v.Build)}";
         }
 
@@ -107,6 +167,7 @@ namespace AionToolPro.Desktop.Services
         public string LegacyConfigFilePath => Path.Combine(_cfgDir, "settings.cfg");
         public string CustomDnsFilePath => Path.Combine(_cfgDir, "custom_dns.json");
         public string LogFilePath => Path.Combine(_cfgDir, "actions.log");
+        public string DiagnosticLogFilePath => Path.Combine(_cfgDir, "diagnostics.log");
         public string DnsBackupFilePath => Path.Combine(_cfgDir, "dns_backup.json");
         public string DnsOriginalBackupFilePath => Path.Combine(_cfgDir, "dns_backup.original.json");
         public string HostsOriginalBackupPath => Path.Combine(_cfgDir, "hosts.backup.original");
@@ -117,6 +178,7 @@ namespace AionToolPro.Desktop.Services
 
         public bool EnableActionLog { get; set; } = true;
         public bool RememberSettings { get; set; } = true;
+        public bool EnableDiagnosticLogs { get; set; } = false;
 
         public event Action<string>? CommandOutputReceived;
 
@@ -234,38 +296,170 @@ namespace AionToolPro.Desktop.Services
             return trimmed;
         }
 
-        // ==================== ADAPTER SCANNER & BACKGROUND TELEMETRY ====================
+        // ==================== ADAPTER SCANNER, ACTIVE ROUTE DETECTION & PER-ADAPTER TELEMETRY ====================
+        private static bool IsPhysicalCleanAdapter(NetworkInterface nic)
+        {
+            if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback ||
+                nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel ||
+                nic.NetworkInterfaceType == NetworkInterfaceType.Unknown)
+                return false;
+
+            bool allowedType = nic.NetworkInterfaceType == NetworkInterfaceType.Ethernet ||
+                               nic.NetworkInterfaceType == NetworkInterfaceType.GigabitEthernet ||
+                               nic.NetworkInterfaceType == NetworkInterfaceType.FastEthernetT ||
+                               nic.NetworkInterfaceType == NetworkInterfaceType.FastEthernetFx ||
+                               nic.NetworkInterfaceType == NetworkInterfaceType.Ethernet3Megabit ||
+                               nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 ||
+                               nic.NetworkInterfaceType == NetworkInterfaceType.Ppp ||
+                               nic.NetworkInterfaceType == NetworkInterfaceType.Wwanpp ||
+                               nic.NetworkInterfaceType == NetworkInterfaceType.Wwanpp2;
+            if (!allowedType) return false;
+
+            if (IgnoredAdapterKeywords.Any(k =>
+                    nic.Name.Contains(k, StringComparison.OrdinalIgnoreCase) ||
+                    nic.Description.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                return false;
+
+            if (nic.NetworkInterfaceType != NetworkInterfaceType.Ppp &&
+                nic.NetworkInterfaceType != NetworkInterfaceType.Wwanpp &&
+                nic.NetworkInterfaceType != NetworkInterfaceType.Wwanpp2)
+            {
+                var mac = nic.GetPhysicalAddress()?.GetAddressBytes();
+                if (mac == null || mac.Length < 6 || mac.All(b => b == 0))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static bool HasActiveVpnTunAdapter(NetworkInterface[] allNics)
+        {
+            foreach (var nic in allNics)
+            {
+                if (nic.OperationalStatus != OperationalStatus.Up) continue;
+                if (VpnTunKeywords.Any(k =>
+                        nic.Name.Contains(k, StringComparison.OrdinalIgnoreCase) ||
+                        nic.Description.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                    return true;
+            }
+            return false;
+        }
+
+        private static uint TryGetBestRouteInterfaceIndex()
+        {
+            foreach (string probeIp in new[] { "1.1.1.1", "8.8.8.8" })
+            {
+                try
+                {
+                    uint dest = BitConverter.ToUInt32(IPAddress.Parse(probeIp).GetAddressBytes(), 0);
+                    if (GetBestInterface(dest, out uint ifIdx) == 0 && ifIdx != 0)
+                        return ifIdx;
+                }
+                catch { }
+            }
+            return 0;
+        }
+
+        private static bool TryGetNicIpv4Index(NetworkInterface nic, out int ifIndex)
+        {
+            ifIndex = -1;
+            try
+            {
+                if (!nic.Supports(NetworkInterfaceComponent.IPv4)) return false;
+                var ipv4Props = nic.GetIPProperties().GetIPv4Properties();
+                if (ipv4Props != null)
+                {
+                    ifIndex = ipv4Props.Index;
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private static IPAddress? GetValidUnicastIpv4(NetworkInterface nic)
+        {
+            try
+            {
+                foreach (var u in nic.GetIPProperties().UnicastAddresses)
+                {
+                    if (u.Address.AddressFamily != AddressFamily.InterNetwork) continue;
+                    byte[] b = u.Address.GetAddressBytes();
+                    if (b[0] == 0 || b[0] == 127 || (b[0] == 169 && b[1] == 254)) continue;
+                    return u.Address;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static bool HasIpv4Gateway(NetworkInterface nic)
+        {
+            try
+            {
+                return nic.GetIPProperties().GatewayAddresses
+                    .Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.Any.Equals(g.Address));
+            }
+            catch { return false; }
+        }
+
+        private static string FormatLinkSpeed(long bitsPerSec)
+        {
+            if (bitsPerSec <= 0) return "N/A";
+            if (bitsPerSec >= 1_000_000_000) return $"{bitsPerSec / 1_000_000_000.0:0.#} Gbps";
+            if (bitsPerSec >= 1_000_000) return $"{bitsPerSec / 1_000_000.0:0} Mbps";
+            return $"{bitsPerSec / 1_000.0:0} Kbps";
+        }
+
         public Task<List<NetworkAdaptorItem>> ScanSystemAdaptorsAsync(CancellationToken token = default)
         {
             return Task.Run(async () =>
             {
-                var map = new Dictionary<string, NetworkAdaptorItem>(StringComparer.OrdinalIgnoreCase);
+                var map = new Dictionary<string, (NetworkAdaptorItem Item, int PriorityScore)>(StringComparer.OrdinalIgnoreCase);
+                uint bestIfIndex = TryGetBestRouteInterfaceIndex();
 
                 try
                 {
-                    foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+                    var allNics = NetworkInterface.GetAllNetworkInterfaces();
+                    foreach (var nic in allNics)
                     {
-                        if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback ||
-                            nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel)
-                            continue;
-
-                        if (IgnoredAdapterKeywords.Any(k =>
-                                nic.Name.Contains(k, StringComparison.OrdinalIgnoreCase) ||
-                                nic.Description.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                        if (!IsPhysicalCleanAdapter(nic))
                             continue;
 
                         bool isUp = nic.OperationalStatus == OperationalStatus.Up;
-                        map[nic.Name] = new NetworkAdaptorItem
+                        bool hasGw = isUp && HasIpv4Gateway(nic);
+                        bool hasIp = isUp && GetValidUnicastIpv4(nic) != null;
+                        bool matchesBestRoute = bestIfIndex != 0 && TryGetNicIpv4Index(nic, out int idx) && idx == (int)bestIfIndex;
+
+                        int score = 0;
+                        if (matchesBestRoute && isUp) score += 1000;
+                        if (isUp && hasGw && hasIp) score += 500;
+                        else if (isUp && hasIp) score += 200;
+                        else if (isUp) score += 100;
+
+                        if (nic.NetworkInterfaceType == NetworkInterfaceType.Ethernet ||
+                            nic.NetworkInterfaceType == NetworkInterfaceType.GigabitEthernet)
+                            score += 20;
+                        else if (nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211)
+                            score += 10;
+
+                        var item = new NetworkAdaptorItem
                         {
                             Name = nic.Name,
                             AdminState = "Enabled",
                             ConnectionState = isUp ? "Connected" : "Disconnected",
-                            HealthState = isUp ? AdaptorHealthState.ConnectedGreen : AdaptorHealthState.DisconnectedOrange
+                            HealthState = isUp ? AdaptorHealthState.ConnectedGreen : AdaptorHealthState.DisconnectedOrange,
+                            IsActiveInternetRoute = matchesBestRoute || (isUp && hasGw && hasIp)
                         };
+                        map[nic.Name] = (item, score);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    WriteDiagnosticLog("AdapterScan", $"Managed NIC scan error: {ex.Message}");
+                }
 
+                // Include disabled physical ("Dedicated") adapters cleanly so user can see/manage them
                 try
                 {
                     var res = await _runner.RunAsync(
@@ -282,60 +476,61 @@ namespace AionToolPro.Desktop.Services
                             var line = rawLine.Trim();
                             if (line.Length == 0 || line.StartsWith("---")) continue;
 
-                            var m = Regex.Match(line, @"^(Enabled|Disabled)\s+(Connected|Disconnected)\s+\S+\s+(.+)$", RegexOptions.IgnoreCase);
+                            var m = Regex.Match(line, @"^(Enabled|Disabled)\s+(Connected|Disconnected)\s+(Dedicated)\s+(.+)$", RegexOptions.IgnoreCase);
                             if (!m.Success) continue;
 
                             string adminState = m.Groups[1].Value;
                             string connState = m.Groups[2].Value;
-                            string ifaceName = m.Groups[3].Value.Trim();
+                            string ifaceName = m.Groups[4].Value.Trim();
 
                             if (IgnoredAdapterKeywords.Any(k => ifaceName.Contains(k, StringComparison.OrdinalIgnoreCase)))
                                 continue;
 
                             if (!map.ContainsKey(ifaceName) && adminState.Equals("Disabled", StringComparison.OrdinalIgnoreCase))
                             {
-                                map[ifaceName] = new NetworkAdaptorItem
+                                var item = new NetworkAdaptorItem
                                 {
                                     Name = ifaceName,
                                     AdminState = "Disabled",
                                     ConnectionState = connState,
-                                    HealthState = AdaptorHealthState.DisabledRed
+                                    HealthState = AdaptorHealthState.DisabledRed,
+                                    IsActiveInternetRoute = false
                                 };
+                                map[ifaceName] = (item, -100);
                             }
                         }
                     }
                 }
                 catch { }
 
-                return map.Values
-                    .OrderBy(a => (int)a.HealthState)
-                    .ThenBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+                var ordered = map.Values
+                    .OrderBy(x => (int)x.Item.HealthState)
+                    .ThenByDescending(x => x.PriorityScore)
+                    .ThenBy(x => x.Item.Name, StringComparer.OrdinalIgnoreCase)
+                    .Select(x => x.Item)
                     .ToList();
+
+                WriteDiagnosticLog("AdapterScan", $"Found {ordered.Count} clean adapter(s): {string.Join(", ", ordered.Select(a => $"{a.Name}[{a.ConnectionState}{(a.IsActiveInternetRoute ? ",Active" : "")}]"))}");
+                return ordered;
             }, token);
         }
 
-        public Task<string> DetectRouterGatewayIpAsync(string preferredInterfaceName) =>
-            Task.Run(() => DetectRouterGatewayIp(preferredInterfaceName));
+        public Task<string> DetectRouterGatewayIpAsync(string interfaceName) =>
+            Task.Run(() => DetectRouterGatewayIp(interfaceName));
 
-        public string DetectRouterGatewayIp(string preferredInterfaceName)
+        /// <summary>
+        /// Strictly detects the default IPv4 gateway for the specified adapter ONLY (never borrows another adapter's router).
+        /// </summary>
+        public string DetectRouterGatewayIp(string interfaceName)
         {
             try
             {
-                var allNics = NetworkInterface.GetAllNetworkInterfaces()
-                    .Where(n => n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-                    .ToList();
+                var selectedNic = NetworkInterface.GetAllNetworkInterfaces()
+                    .FirstOrDefault(n => n.Name.Equals(interfaceName, StringComparison.OrdinalIgnoreCase));
 
-                var selectedNic = allNics.FirstOrDefault(n => n.Name.Equals(preferredInterfaceName, StringComparison.OrdinalIgnoreCase));
-                if (selectedNic != null)
+                if (selectedNic != null && selectedNic.OperationalStatus == OperationalStatus.Up)
                 {
                     var gw = selectedNic.GetIPProperties().GatewayAddresses
-                        .FirstOrDefault(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.Any.Equals(g.Address));
-                    if (gw != null) return gw.Address.ToString();
-                }
-
-                foreach (var nic in allNics.Where(n => n.OperationalStatus == OperationalStatus.Up))
-                {
-                    var gw = nic.GetIPProperties().GatewayAddresses
                         .FirstOrDefault(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.Any.Equals(g.Address));
                     if (gw != null) return gw.Address.ToString();
                 }
@@ -344,6 +539,9 @@ namespace AionToolPro.Desktop.Services
             return string.Empty;
         }
 
+        /// <summary>
+        /// Captures telemetry strictly for the selected network adapter (zero cross-adapter leakage).
+        /// </summary>
         public Task<AdapterTelemetrySnapshot> CaptureAdapterTelemetryAsync(string interfaceName)
         {
             return Task.Run(() =>
@@ -353,29 +551,12 @@ namespace AionToolPro.Desktop.Services
                     var allNics = NetworkInterface.GetAllNetworkInterfaces();
                     var nic = allNics.FirstOrDefault(n => n.Name.Equals(interfaceName, StringComparison.OrdinalIgnoreCase));
 
-                    // Detect gateway for selected adapter, or fall back to any active non-loopback adapter
-                    string gatewayIp = string.Empty;
-                    if (nic != null)
-                    {
-                        var gw = nic.GetIPProperties().GatewayAddresses
-                            .FirstOrDefault(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.Any.Equals(g.Address));
-                        if (gw != null) gatewayIp = gw.Address.ToString();
-                    }
-                    if (string.IsNullOrEmpty(gatewayIp))
-                    {
-                        foreach (var candidate in allNics.Where(n => n.NetworkInterfaceType != NetworkInterfaceType.Loopback && n.OperationalStatus == OperationalStatus.Up))
-                        {
-                            var gw = candidate.GetIPProperties().GatewayAddresses
-                                .FirstOrDefault(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.Any.Equals(g.Address));
-                            if (gw != null) { gatewayIp = gw.Address.ToString(); break; }
-                        }
-                    }
-
                     if (nic == null)
                     {
-                        return new AdapterTelemetrySnapshot(interfaceName, false, "Unavailable", 0, 0, 0, 0, 0, 0, 0, 0, new List<string>(), "N/A", gatewayIp);
+                        return new AdapterTelemetrySnapshot(interfaceName, false, false, "Disabled / Unavailable", 0, 0, 0, 0, 0, 0, 0, 0, new List<string>(), "N/A", string.Empty, "N/A");
                     }
 
+                    bool isUp = nic.OperationalStatus == OperationalStatus.Up;
                     var stats = nic.GetIPStatistics();
                     var ipProps = nic.GetIPProperties();
                     var dnsServers = ipProps.DnsAddresses
@@ -383,13 +564,25 @@ namespace AionToolPro.Desktop.Services
                         .Select(a => a.ToString())
                         .ToList();
 
-                    string ipv4 = ipProps.UnicastAddresses
-                        .FirstOrDefault(u => u.Address.AddressFamily == AddressFamily.InterNetwork)?.Address.ToString() ?? "N/A";
+                    string ipv4 = GetValidUnicastIpv4(nic)?.ToString()
+                        ?? ipProps.UnicastAddresses.FirstOrDefault(u => u.Address.AddressFamily == AddressFamily.InterNetwork)?.Address.ToString()
+                        ?? "N/A";
+
+                    string gatewayIp = string.Empty;
+                    if (isUp)
+                    {
+                        var gw = ipProps.GatewayAddresses
+                            .FirstOrDefault(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.Any.Equals(g.Address));
+                        if (gw != null) gatewayIp = gw.Address.ToString();
+                    }
+
+                    string speedLabel = isUp ? FormatLinkSpeed(nic.Speed) : "Offline";
 
                     return new AdapterTelemetrySnapshot(
                         nic.Name,
                         true,
-                        nic.OperationalStatus.ToString(),
+                        isUp,
+                        isUp ? "Connected" : nic.OperationalStatus.ToString(),
                         stats.BytesReceived,
                         stats.BytesSent,
                         stats.UnicastPacketsReceived,
@@ -400,16 +593,17 @@ namespace AionToolPro.Desktop.Services
                         stats.OutgoingPacketsDiscarded,
                         dnsServers,
                         ipv4,
-                        gatewayIp);
+                        gatewayIp,
+                        speedLabel);
                 }
                 catch
                 {
-                    return new AdapterTelemetrySnapshot(interfaceName, false, "Error", 0, 0, 0, 0, 0, 0, 0, 0, new List<string>(), "N/A", string.Empty);
+                    return new AdapterTelemetrySnapshot(interfaceName, false, false, "Error", 0, 0, 0, 0, 0, 0, 0, 0, new List<string>(), "N/A", string.Empty, "N/A");
                 }
             });
         }
 
-        // ==================== FAST PING & NATIVE RFC 1035 UDP/53 DNS QUERY ====================
+        // ==================== FAST PER-ADAPTER PING & NATIVE RFC 1035 UDP/53 DNS QUERY ====================
         public void ClearDnsResolveCache() => _dnsResolveCache.Clear();
 
         private async Task<IPAddress?> ResolveHostCachedAsync(string hostOrIp)
@@ -446,17 +640,68 @@ namespace AionToolPro.Desktop.Services
             return null;
         }
 
-        /// <summary>
-        /// Measures TCP reachability RTT. Treats TCP RST (ConnectionRefused) as REACHABLE
-        /// because receiving an active RST proves the host/router is online and yields exact LAN/WAN RTT.
-        /// </summary>
-        private static async Task<long?> MeasureTcpReachabilityMsAsync(IPAddress targetIp, int port, int timeoutMs, bool treatRefusedAsAlive = false)
+        private static long? SendBoundIcmpEchoSync(IPAddress sourceIp, IPAddress destIp, int timeoutMs)
+        {
+            IntPtr handle = IcmpCreateFile();
+            if (handle == IntPtr.Zero || handle == new IntPtr(-1))
+                return null;
+
+            int replyStructSize = Marshal.SizeOf<ICMP_ECHO_REPLY>();
+            int replySize = replyStructSize + StandardPingPayload32.Length + 64;
+            IntPtr replyBuf = Marshal.AllocHGlobal(replySize);
+            try
+            {
+                uint srcAddr = BitConverter.ToUInt32(sourceIp.GetAddressBytes(), 0);
+                uint dstAddr = BitConverter.ToUInt32(destIp.GetAddressBytes(), 0);
+                var opts = new IP_OPTION_INFORMATION { Ttl = 128 };
+
+                uint replies = IcmpSendEcho2Ex(
+                    handle,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    srcAddr,
+                    dstAddr,
+                    StandardPingPayload32,
+                    (ushort)StandardPingPayload32.Length,
+                    ref opts,
+                    replyBuf,
+                    (uint)replySize,
+                    (uint)Math.Max(250, timeoutMs));
+
+                if (replies > 0)
+                {
+                    var reply = Marshal.PtrToStructure<ICMP_ECHO_REPLY>(replyBuf);
+                    if (reply.Status == 0)
+                        return reply.RoundTripTime;
+                }
+            }
+            catch { }
+            finally
+            {
+                Marshal.FreeHGlobal(replyBuf);
+                IcmpCloseHandle(handle);
+            }
+
+            return null;
+        }
+
+        private static async Task<long?> MeasureTcpReachabilityMsAsync(
+            IPAddress targetIp,
+            int port,
+            int timeoutMs,
+            bool treatRefusedAsAlive = false,
+            IPAddress? bindLocalIp = null)
         {
             if (port <= 0) return null;
             var sw = Stopwatch.StartNew();
             try
             {
                 using var tcp = new Socket(targetIp.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+                if (bindLocalIp != null && bindLocalIp.AddressFamily == targetIp.AddressFamily)
+                {
+                    tcp.Bind(new IPEndPoint(bindLocalIp, 0));
+                }
                 using var cts = new CancellationTokenSource(timeoutMs);
                 await tcp.ConnectAsync(new IPEndPoint(targetIp, port), cts.Token).ConfigureAwait(false);
                 sw.Stop();
@@ -473,13 +718,8 @@ namespace AionToolPro.Desktop.Services
             }
         }
 
-        /// <summary>
-        /// System-grade accurate single-shot ICMP probe (32-byte Windows payload, TTL=128, 2000ms default).
-        /// Never performs hidden ICMP retries so packet loss matches real ping.exe behavior.
-        /// When allowTcpFallback is enabled (e.g., ICMP blocked by VPN TUN or router firewall),
-        /// falls back transparently to TCP reachability and labels the result as ProbeTransport.TcpFallback.
-        /// </summary>
-        public async Task<PingProbeResult> ProbeHostAccurateAsync(
+        public async Task<PingProbeResult> ProbeHostOnAdapterAsync(
+            string interfaceName,
             string hostOrIp,
             int timeoutMs = 2000,
             int[]? fallbackTcpPorts = null,
@@ -489,37 +729,95 @@ namespace AionToolPro.Desktop.Services
             if (string.IsNullOrWhiteSpace(hostOrIp))
                 return new PingProbeResult(null, ProbeTransport.Timeout);
 
+            IPAddress? sourceIp = null;
+            bool allowVpnRouteFallback = false;
+
+            if (!string.IsNullOrWhiteSpace(interfaceName))
+            {
+                try
+                {
+                    var allNics = NetworkInterface.GetAllNetworkInterfaces();
+                    var selectedNic = allNics.FirstOrDefault(n => n.Name.Equals(interfaceName, StringComparison.OrdinalIgnoreCase));
+
+                    if (selectedNic == null || selectedNic.OperationalStatus != OperationalStatus.Up)
+                        return new PingProbeResult(null, ProbeTransport.Timeout);
+
+                    sourceIp = GetValidUnicastIpv4(selectedNic);
+                    if (sourceIp == null)
+                        return new PingProbeResult(null, ProbeTransport.Timeout);
+
+                    allowVpnRouteFallback = HasIpv4Gateway(selectedNic) && HasActiveVpnTunAdapter(allNics);
+                }
+                catch
+                {
+                    return new PingProbeResult(null, ProbeTransport.Timeout);
+                }
+            }
+
             var targetIp = await ResolveHostCachedAsync(hostOrIp).ConfigureAwait(false);
             if (targetIp == null)
                 return new PingProbeResult(null, ProbeTransport.Timeout);
 
-            var opts = new PingOptions(128, false);
-            try
+            if (sourceIp != null && targetIp.AddressFamily == AddressFamily.InterNetwork)
             {
-                using var pinger = new Ping();
-                var reply = await pinger.SendPingAsync(targetIp, timeoutMs, StandardPingPayload32, opts).ConfigureAwait(false);
-                if (reply.Status == IPStatus.Success)
+                long? boundMs = await Task.Run(() => SendBoundIcmpEchoSync(sourceIp, targetIp, timeoutMs)).ConfigureAwait(false);
+                if (boundMs.HasValue)
+                    return new PingProbeResult(boundMs.Value, ProbeTransport.Icmp);
+
+                if (allowVpnRouteFallback && !AioCatalog.IsPrivateIpv4(targetIp))
                 {
-                    return new PingProbeResult(reply.RoundtripTime, ProbeTransport.Icmp);
+                    var opts = new PingOptions(128, false);
+                    try
+                    {
+                        using var pinger = new Ping();
+                        var reply = await pinger.SendPingAsync(targetIp, Math.Min(1500, timeoutMs), StandardPingPayload32, opts).ConfigureAwait(false);
+                        if (reply.Status == IPStatus.Success)
+                            return new PingProbeResult(reply.RoundtripTime, ProbeTransport.Icmp);
+                    }
+                    catch { }
                 }
             }
-            catch { }
+            else
+            {
+                var opts = new PingOptions(128, false);
+                try
+                {
+                    using var pinger = new Ping();
+                    var reply = await pinger.SendPingAsync(targetIp, timeoutMs, StandardPingPayload32, opts).ConfigureAwait(false);
+                    if (reply.Status == IPStatus.Success)
+                        return new PingProbeResult(reply.RoundtripTime, ProbeTransport.Icmp);
+                }
+                catch { }
+            }
 
             if (allowTcpFallback && fallbackTcpPorts != null && fallbackTcpPorts.Length > 0)
             {
                 int tcpTimeout = Math.Min(1200, Math.Max(600, timeoutMs / 2));
                 foreach (int port in fallbackTcpPorts)
                 {
-                    long? tcpMs = await MeasureTcpReachabilityMsAsync(targetIp, port, tcpTimeout, treatTcpRefusedAsAlive).ConfigureAwait(false);
+                    long? tcpMs = await MeasureTcpReachabilityMsAsync(targetIp, port, tcpTimeout, treatTcpRefusedAsAlive, bindLocalIp: sourceIp).ConfigureAwait(false);
                     if (tcpMs.HasValue)
-                    {
                         return new PingProbeResult(tcpMs.Value, ProbeTransport.TcpFallback);
+
+                    if (allowVpnRouteFallback && sourceIp != null && !AioCatalog.IsPrivateIpv4(targetIp))
+                    {
+                        long? vpnTcpMs = await MeasureTcpReachabilityMsAsync(targetIp, port, tcpTimeout, treatTcpRefusedAsAlive, bindLocalIp: null).ConfigureAwait(false);
+                        if (vpnTcpMs.HasValue)
+                            return new PingProbeResult(vpnTcpMs.Value, ProbeTransport.TcpFallback);
                     }
                 }
             }
 
             return new PingProbeResult(null, ProbeTransport.Timeout);
         }
+
+        public Task<PingProbeResult> ProbeHostAccurateAsync(
+            string hostOrIp,
+            int timeoutMs = 2000,
+            int[]? fallbackTcpPorts = null,
+            bool allowTcpFallback = false,
+            bool treatTcpRefusedAsAlive = false) =>
+            ProbeHostOnAdapterAsync(string.Empty, hostOrIp, timeoutMs, fallbackTcpPorts, allowTcpFallback, treatTcpRefusedAsAlive);
 
         public async Task<long?> PingSingleHostFastAsync(string hostOrIp, int timeoutMs = 2000, int fallbackTcpPort = 0)
         {
@@ -588,7 +886,7 @@ namespace AionToolPro.Desktop.Services
         }
 
         // ==================== SETTINGS, EXPORT/IMPORT & ACTION LOG ====================
-        public void SaveSettings(int themeId, string interfaceName, bool isDarkMode, string languageCode, int surfacePaletteId = 0, bool minimizeToTray = false, string globalPingTarget = "1.1.1.1", string intranetPingTarget = "www.arvancloud.ir", bool glassMode = false, int transparencyPercent = 100, double brightnessLevel = 1.0, double contrastLevel = 1.0)
+        public void SaveSettings(int themeId, string interfaceName, bool isDarkMode, string languageCode, int surfacePaletteId = 0, bool minimizeToTray = true, string globalPingTarget = "1.1.1.1", string intranetPingTarget = "www.arvancloud.ir", bool glassMode = false, int transparencyPercent = 100, double brightnessLevel = 1.0, double contrastLevel = 1.0, string customAccentHex = "#5865F2", string customSecondaryHex = "#38BDF8", bool enableDiagnosticLogs = false, bool enableWindowsDoh = false)
         {
             lock (_ioLock)
             {
@@ -604,7 +902,7 @@ namespace AionToolPro.Desktop.Services
                     Directory.CreateDirectory(_cfgDir);
                     string safeGlobal = ValidateHostOrIp(globalPingTarget) ? globalPingTarget.Trim() : "1.1.1.1";
                     string safeIntranet = ValidateHostOrIp(intranetPingTarget) ? intranetPingTarget.Trim() : "www.arvancloud.ir";
-                    var model = new AppSettingsModel(themeId, interfaceName, EnableActionLog, isDarkMode, languageCode, surfacePaletteId, minimizeToTray, safeGlobal, safeIntranet, glassMode, Math.Clamp(transparencyPercent, 35, 100), Math.Clamp(brightnessLevel, 0.75, 1.30), Math.Clamp(contrastLevel, 0.80, 1.35));
+                    var model = new AppSettingsModel(themeId, interfaceName, EnableActionLog, isDarkMode, languageCode, surfacePaletteId, minimizeToTray, safeGlobal, safeIntranet, glassMode, Math.Clamp(transparencyPercent, 35, 100), Math.Clamp(brightnessLevel, 0.75, 1.30), Math.Clamp(contrastLevel, 0.80, 1.35), string.IsNullOrWhiteSpace(customAccentHex) ? "#5865F2" : customAccentHex, string.IsNullOrWhiteSpace(customSecondaryHex) ? "#38BDF8" : customSecondaryHex, enableDiagnosticLogs, enableWindowsDoh);
                     string tmp = ConfigFilePath + ".tmp";
                     File.WriteAllText(tmp, JsonSerializer.Serialize(model, JsonOpts), new UTF8Encoding(false));
                     if (File.Exists(ConfigFilePath))
@@ -644,7 +942,7 @@ namespace AionToolPro.Desktop.Services
                             else if (k.Equals("dark", StringComparison.OrdinalIgnoreCase)) dark = v != "0";
                             else if (k.Equals("lang", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(v)) lang = v;
                         }
-                        return new AppSettingsModel(theme, iface, log, dark, lang, surface, false, "1.1.1.1", "www.arvancloud.ir", false, 100, 1.0, 1.0);
+                        return new AppSettingsModel(theme, iface, log, dark, lang, surface, true, "1.1.1.1", "www.arvancloud.ir", false, 100, 1.0, 1.0, "#5865F2", "#38BDF8", false, false);
                     }
                 }
                 catch { }
@@ -747,6 +1045,108 @@ namespace AionToolPro.Desktop.Services
                     File.AppendAllText(LogFilePath, line, new UTF8Encoding(false));
                 }
                 catch { }
+            }
+        }
+
+        public void WriteDiagnosticLog(string category, string message)
+        {
+            if (!EnableDiagnosticLogs) return;
+            lock (_ioLock)
+            {
+                try
+                {
+                    Directory.CreateDirectory(_cfgDir);
+                    if (File.Exists(DiagnosticLogFilePath))
+                    {
+                        var fi = new FileInfo(DiagnosticLogFilePath);
+                        if (fi.Length > 1024 * 1024)
+                        {
+                            var tail = File.ReadAllLines(DiagnosticLogFilePath).TakeLast(400).ToArray();
+                            File.WriteAllLines(DiagnosticLogFilePath, tail, new UTF8Encoding(false));
+                        }
+                    }
+                    string line = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff}Z [{SanitizeLogField(category)}] {SanitizeLogField(message)}{Environment.NewLine}";
+                    File.AppendAllText(DiagnosticLogFilePath, line, new UTF8Encoding(false));
+                }
+                catch { }
+            }
+        }
+
+        public async Task<(bool Success, string ZipPath, string ClipboardSummary, string Message)> ExportBugReportAsync(
+            string destinationZipPath,
+            string selectedInterface,
+            string activeSettingsSummary)
+        {
+            try
+            {
+                var snap = await CaptureAdapterTelemetryAsync(selectedInterface).ConfigureAwait(false);
+                var adaptors = await ScanSystemAdaptorsAsync().ConfigureAwait(false);
+
+                var sb = new StringBuilder();
+                sb.AppendLine("=== AionToolPro Diagnostic Bug Report ===");
+                sb.AppendLine($"Generated (UTC) : {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z");
+                sb.AppendLine($"App Version     : v{GetAppVersionString()}");
+                sb.AppendLine($"OS Version      : {Environment.OSVersion} (Build {Environment.OSVersion.Version.Build})");
+                sb.AppendLine($"Runtime         : {RuntimeInformation.FrameworkDescription} ({RuntimeInformation.ProcessArchitecture})");
+                sb.AppendLine($"Install Mode    : {(IsInstalledCopy() ? "Installed" : "Portable")}");
+                sb.AppendLine($"Settings        : {activeSettingsSummary}");
+                sb.AppendLine();
+                sb.AppendLine("=== Selected Adapter Snapshot (Sanitized) ===");
+                sb.AppendLine($"Name            : {snap.InterfaceName}");
+                sb.AppendLine($"Status          : {snap.OperationalStatus} (Up={snap.IsUp}, Link={snap.LinkSpeedLabel})");
+                sb.AppendLine($"DNS Servers     : {(snap.DnsServers.Count > 0 ? string.Join(", ", snap.DnsServers) : "Automatic DHCP")}");
+                sb.AppendLine($"Has Gateway     : {!string.IsNullOrWhiteSpace(snap.GatewayIp)}");
+                sb.AppendLine($"NIC Drops       : InErr={snap.IncomingPacketsWithErrors}, InDisc={snap.IncomingPacketsDiscarded}, OutErr={snap.OutgoingPacketsWithErrors}, OutDisc={snap.OutgoingPacketsDiscarded}");
+                sb.AppendLine();
+                sb.AppendLine($"=== Clean Adapters Detected ({adaptors.Count}) ===");
+                foreach (var a in adaptors)
+                    sb.AppendLine($" - {a.Name} | Admin={a.AdminState} | Conn={a.ConnectionState} | ActiveRoute={a.IsActiveInternetRoute}");
+
+                string sysInfoText = sb.ToString();
+
+                await Task.Run(() =>
+                {
+                    if (File.Exists(destinationZipPath))
+                        File.Delete(destinationZipPath);
+
+                    using var archive = ZipFile.Open(destinationZipPath, ZipArchiveMode.Create);
+
+                    void AddTextEntry(string entryName, string content)
+                    {
+                        var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+                        using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
+                        writer.Write(content);
+                    }
+
+                    AddTextEntry("system_info.txt", sysInfoText);
+
+                    lock (_ioLock)
+                    {
+                        if (File.Exists(DiagnosticLogFilePath))
+                            AddTextEntry("diagnostics.log", File.ReadAllText(DiagnosticLogFilePath));
+                        if (File.Exists(LogFilePath))
+                            AddTextEntry("actions.log", File.ReadAllText(LogFilePath));
+
+                        string crashLog = Path.Combine(_cfgDir, "crash.log");
+                        if (File.Exists(crashLog))
+                            AddTextEntry("crash.log", File.ReadAllText(crashLog));
+                    }
+                }).ConfigureAwait(false);
+
+                string clipboardSummary =
+                    $"**AionToolPro Bug Report (v{GetAppVersionString()})**\n" +
+                    $"- OS: Windows Build {Environment.OSVersion.Version.Build} ({RuntimeInformation.ProcessArchitecture})\n" +
+                    $"- Adapter: {snap.InterfaceName} ({snap.OperationalStatus}, {snap.LinkSpeedLabel})\n" +
+                    $"- DNS: {(snap.DnsServers.Count > 0 ? string.Join(", ", snap.DnsServers) : "DHCP")}\n" +
+                    $"- Settings: {activeSettingsSummary}\n\n" +
+                    $"*(Attach `{Path.GetFileName(destinationZipPath)}` for full logs)*";
+
+                WriteActionLog("Diagnostics", $"OK Exported bug report bundle: {Path.GetFileName(destinationZipPath)}");
+                return (true, destinationZipPath, clipboardSummary, $"Bug report saved successfully to:\n{destinationZipPath}");
+            }
+            catch (Exception ex)
+            {
+                return (false, string.Empty, string.Empty, $"Failed to generate bug report: {ex.Message}");
             }
         }
 

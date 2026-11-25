@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.9.1-5865F2?style=for-the-badge" alt="Version 0.9.1" />
+  <img src="https://img.shields.io/badge/Version-0.9.2-5865F2?style=for-the-badge" alt="Version 0.9.2" />
   <img src="https://img.shields.io/badge/.NET-8.0%20WPF-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 8.0 WPF" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10/11 x64" />
   <img src="https://img.shields.io/badge/License-GPL--3.0-10B981?style=for-the-badge" alt="GPL-3.0 License" />
@@ -39,7 +39,7 @@
 | **Active Connections &amp; Firewall** | Native Win32 `GetExtendedTcpTable` (`AF_INET` &amp; `AF_INET6`) monitor with search filter, protected system process guard, and SHA-256 path-hashed Windows Firewall blocking with persistent unblock management. |
 | **Wi-Fi &amp; Atomic Hosts Manager** | Language-independent Wi-Fi profile extraction (masked by default, securely wiped temp XML) and atomic UTF-8 (no BOM) Hosts blocklist management with multi-host parsing and automatic backups. |
 | **Safe Game Booster &amp; Maintenance** | Suspends only currently running non-essential Windows services with exact state restoration, 24-hour guarded Temp cleanup (protecting `%TEMP%\.net`), DISM/SFC repair, and safe Windows Update cache reset. |
-| **Tray, Themes &amp; Auto-Updater** | Native Win32 System Tray with live ping tooltip and quick DNS menu, elevated Start-with-Windows via Task Scheduler, 12 themes (including Glass presets) + 9 surface palettes + native Windows 10/11 DWM Acrylic Glass Mode, live Transparency (35%–100%), Brightness & Contrast calibration, and smooth GPU-accelerated animations, settings Export/Import, and SHA-256 verified GitHub Releases auto-updater. |
+| **Tray, Themes &amp; Auto-Updater** | Native Win32 System Tray with live ping tooltip and quick DNS menu, elevated Start-with-Windows via Task Scheduler, 13 themes (including Glass presets + Full-Spectrum Custom Color Studio) + 9 surface palettes + native Windows 10/11 DWM Acrylic Glass Mode, live Transparency (35%–100%), Brightness & Contrast calibration, and smooth GPU-accelerated animations, settings Export/Import, and SHA-256 verified GitHub Releases auto-updater. |
 
 ## Security Architecture
 
@@ -51,10 +51,10 @@
 
 ## Installation
 
-1. Download the latest `AionToolPro_Setup_v0.9.1.exe` and `checksums.txt` from the [GitHub Releases](https://github.com/Yoqaizo/AionToolPro/releases/latest) page.
+1. Download the latest `AionToolPro_Setup_v0.9.2.exe` and `checksums.txt` from the [GitHub Releases](https://github.com/Yoqaizo/AionToolPro/releases/latest) page.
 2. *(Optional)* Verify the installer integrity in PowerShell:
    ```powershell
-   Get-FileHash .\AionToolPro_Setup_v0.9.1.exe -Algorithm SHA256
+   Get-FileHash .\AionToolPro_Setup_v0.9.2.exe -Algorithm SHA256
    ```
 3. Run the installer and follow the setup wizard.
 

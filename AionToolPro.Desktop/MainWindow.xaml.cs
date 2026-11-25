@@ -60,7 +60,14 @@ namespace AionToolPro.Desktop
         private int _transparencyPercent = 100;
         private double _brightnessLevel = 1.0;
         private double _contrastLevel = 1.0;
+        private string _customAccentHex = "#5865F2";
+        private string _customSecondaryHex = "#38BDF8";
+        private bool _editingSecondaryCustomColor;
         private bool _suppressVisualSliders;
+        private bool _suppressCustomColorSliders;
+        private bool _enableWindowsDoh;
+        private bool _enableDiagnosticLogs;
+        private Border? _customThemeSwatchDot;
         private DnsBenchmarkRow? _fastestWinner;
         private List<AppNetworkUsageRow> _allAppRows = new();
 
@@ -298,7 +305,9 @@ namespace AionToolPro.Desktop
                 _transparencyPercent,
                 _brightnessLevel,
                 _contrastLevel,
-                animate: animateTheme);
+                animate: animateTheme,
+                customAccentHex: _customAccentHex,
+                customSecondaryHex: _customSecondaryHex);
 
             // Always keep Window.Background transparent so DWM Acrylic blur never gets blocked by an opaque outer shell;
             // RootWindowBorder paints 100% opaque canvas in Solid Mode and low-alpha frost in Glass Mode.
@@ -542,6 +551,7 @@ namespace AionToolPro.Desktop
 
             BuildThemeSwatchCards();
             BuildSurfaceSwatchCards();
+            BuildCustomColorPresets();
             UpdateSwatchSelectionHighlights();
         }
 
@@ -709,7 +719,11 @@ namespace AionToolPro.Desktop
                     topRow.Children.Add(catPill);
                     Grid.SetRow(topRow, 0);
 
-                    // Row 1: Crisp Monospace IPv4 Pair (fits cleanly even for 114.114.114.114 · 114.114.115.115)
+                    // Row 1: Crisp Monospace IPv4 Pair + Tiny DoH indicator on supported servers
+                    var ipRow = new Grid { Margin = new Thickness(0, 6, 0, 3), HorizontalAlignment = HorizontalAlignment.Stretch };
+                    ipRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    ipRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
                     var ipTxt = new TextBlock
                     {
                         Text = $"{p.PrimaryIp} · {p.SecondaryIp}",
@@ -717,11 +731,40 @@ namespace AionToolPro.Desktop
                         FontSize = 10.5,
                         FontWeight = FontWeights.SemiBold,
                         HorizontalAlignment = HorizontalAlignment.Left,
+                        VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis,
-                        Margin = new Thickness(0, 6, 0, 3)
+                        Margin = new Thickness(0, 0, p.HasDoh ? 6 : 0, 0)
                     };
                     ipTxt.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
-                    Grid.SetRow(ipTxt, 1);
+                    Grid.SetColumn(ipTxt, 0);
+                    ipRow.Children.Add(ipTxt);
+
+                    if (p.HasDoh)
+                    {
+                        var dohBorder = new Border
+                        {
+                            Background = _enableWindowsDoh ? FrozenGreenBg : Freeze(new SolidColorBrush(Color.FromArgb(26, 56, 189, 248))),
+                            BorderBrush = _enableWindowsDoh ? FrozenGreen : Freeze(new SolidColorBrush(Color.FromArgb(115, 56, 189, 248))),
+                            BorderThickness = new Thickness(1),
+                            CornerRadius = new CornerRadius(3.5),
+                            Padding = new Thickness(4, 0.5, 4, 0.5),
+                            VerticalAlignment = VerticalAlignment.Center,
+                            ToolTip = _enableWindowsDoh
+                                ? $"Windows DoH ACTIVE — connects encrypted via {p.DohTemplateUrl}"
+                                : $"Supports Windows DNS-over-HTTPS ({p.DohTemplateUrl}). Enable 'Windows DoH' in Settings."
+                        };
+                        dohBorder.Child = new TextBlock
+                        {
+                            Text = "DoH",
+                            FontSize = 7.5,
+                            FontWeight = FontWeights.Bold,
+                            FontFamily = monoFont,
+                            Foreground = _enableWindowsDoh ? FrozenGreen : Freeze(new SolidColorBrush(Color.FromRgb(56, 189, 248)))
+                        };
+                        Grid.SetColumn(dohBorder, 1);
+                        ipRow.Children.Add(dohBorder);
+                    }
+                    Grid.SetRow(ipRow, 1);
 
                     // Row 2: Clean Single-Line Description with Ellipsis
                     var descTxt = new TextBlock
@@ -735,7 +778,7 @@ namespace AionToolPro.Desktop
                     Grid.SetRow(descTxt, 2);
 
                     cardGrid.Children.Add(topRow);
-                    cardGrid.Children.Add(ipTxt);
+                    cardGrid.Children.Add(ipRow);
                     cardGrid.Children.Add(descTxt);
 
                     var btn = new Button
@@ -826,6 +869,8 @@ namespace AionToolPro.Desktop
                     Background = grad,
                     Margin = new Thickness(0, 0, 7, 0)
                 };
+                if (t.IsCustom)
+                    _customThemeSwatchDot = swatch;
                 var label = new TextBlock
                 {
                     Text = t.Name,
@@ -907,6 +952,206 @@ namespace AionToolPro.Desktop
             }
         }
 
+        private static readonly string[] CustomQuickColors =
+        {
+            "#5865F2", "#38BDF8", "#06B6D4", "#10B981", "#22C55E", "#84CC16",
+            "#FACC15", "#F59E0B", "#FB923C", "#F43F5E", "#EC4899", "#EB459E",
+            "#A855F7", "#8B5CF6", "#6366F1", "#E2E8F0"
+        };
+
+        private void BuildCustomColorPresets()
+        {
+            CustomColorPresetsWrapPanel.Children.Clear();
+            foreach (string hex in CustomQuickColors)
+            {
+                var c = ParseColor(hex);
+                var b = new Button
+                {
+                    Width = 22,
+                    Height = 22,
+                    Margin = new Thickness(0, 0, 6, 4),
+                    Padding = new Thickness(0),
+                    Tag = hex,
+                    Cursor = Cursors.Hand,
+                    ToolTip = hex,
+                    Style = (Style)FindResource("SecondaryBtnStyle"),
+                    Content = new Border
+                    {
+                        Width = 16,
+                        Height = 16,
+                        CornerRadius = new CornerRadius(8),
+                        Background = Freeze(new SolidColorBrush(c))
+                    }
+                };
+                b.Click += (s, _) =>
+                {
+                    if (s is Button btn && btn.Tag is string pickedHex)
+                        ApplyCustomColorFromHex(pickedHex, syncSliders: true);
+                };
+                CustomColorPresetsWrapPanel.Children.Add(b);
+            }
+        }
+
+        private void UpdateCustomThemeSwatchDot()
+        {
+            if (_customThemeSwatchDot == null) return;
+            var c1 = ParseColor(_customAccentHex);
+            var c2 = ParseColor(_customSecondaryHex);
+            var grad = new LinearGradientBrush(c1, c2, new Point(0, 0), new Point(1, 1));
+            grad.Freeze();
+            _customThemeSwatchDot.Background = grad;
+        }
+
+        private void SyncCustomColorStudioUi()
+        {
+            CustomColorStudioPanel.Visibility = _currentTheme.IsCustom ? Visibility.Visible : Visibility.Collapsed;
+            UpdateCustomThemeSwatchDot();
+
+            BtnCustomEditPrimary.Style = (Style)FindResource(_editingSecondaryCustomColor ? "SecondaryBtnStyle" : "PrimaryBtnStyle");
+            BtnCustomEditSecondary.Style = (Style)FindResource(_editingSecondaryCustomColor ? "PrimaryBtnStyle" : "SecondaryBtnStyle");
+
+            string activeHex = _editingSecondaryCustomColor ? _customSecondaryHex : _customAccentHex;
+            var activeColor = ParseColor(activeHex);
+            BdCustomColorPreview.Background = Freeze(new SolidColorBrush(activeColor));
+
+            var (h, s, l) = RgbToHsl(activeColor);
+            _suppressCustomColorSliders = true;
+            SliderCustomHue.Value = Math.Round(h);
+            SliderCustomSat.Value = Math.Clamp(Math.Round(s * 100.0), 15, 100);
+            SliderCustomLight.Value = Math.Clamp(Math.Round(l * 100.0), 30, 80);
+            if (!TxtCustomAccentHex.IsKeyboardFocused)
+                TxtCustomAccentHex.Text = activeHex.ToUpperInvariant();
+            TxtCustomHueVal.Text = $"{(int)Math.Round(SliderCustomHue.Value)}°";
+            TxtCustomSatVal.Text = $"{(int)Math.Round(SliderCustomSat.Value)}%";
+            TxtCustomLightVal.Text = $"{(int)Math.Round(SliderCustomLight.Value)}%";
+            _suppressCustomColorSliders = false;
+        }
+
+        private void ApplyCustomColorFromHex(string hex, bool syncSliders)
+        {
+            if (!TryNormalizeHexColor(hex, out string normalized)) return;
+
+            if (_editingSecondaryCustomColor)
+                _customSecondaryHex = normalized;
+            else
+                _customAccentHex = normalized;
+
+            if (!_currentTheme.IsCustom)
+            {
+                _currentTheme = AioCatalog.Themes.FirstOrDefault(t => t.IsCustom) ?? _currentTheme;
+            }
+
+            if (syncSliders)
+                SyncCustomColorStudioUi();
+            else
+            {
+                UpdateCustomThemeSwatchDot();
+                BdCustomColorPreview.Background = Freeze(new SolidColorBrush(ParseColor(normalized)));
+            }
+
+            ApplyVisualState(animateTheme: false);
+            ScheduleDebouncedSettingsSave();
+        }
+
+        private static bool TryNormalizeHexColor(string? input, out string normalized)
+        {
+            normalized = "#5865F2";
+            if (string.IsNullOrWhiteSpace(input)) return false;
+            string s = input.Trim().TrimStart('#');
+            if (s.Length != 6) return false;
+            foreach (char c in s)
+            {
+                bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                if (!ok) return false;
+            }
+            normalized = "#" + s.ToUpperInvariant();
+            return true;
+        }
+
+        private static (double H, double S, double L) RgbToHsl(Color c)
+        {
+            double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+            double max = Math.Max(r, Math.Max(g, b));
+            double min = Math.Min(r, Math.Min(g, b));
+            double l = (max + min) / 2.0;
+            double d = max - min;
+
+            if (d < 0.0001) return (0, 0, l);
+
+            double s = l > 0.5 ? d / (2.0 - max - min) : d / (max + min);
+            double h;
+            if (max == r) h = ((g - b) / d) + (g < b ? 6 : 0);
+            else if (max == g) h = ((b - r) / d) + 2;
+            else h = ((r - g) / d) + 4;
+            h *= 60.0;
+            return (h, s, l);
+        }
+
+        private static Color HslToColor(double h, double s, double l)
+        {
+            h = ((h % 360.0) + 360.0) % 360.0;
+            s = Math.Clamp(s, 0.0, 1.0);
+            l = Math.Clamp(l, 0.0, 1.0);
+
+            double c = (1.0 - Math.Abs(2.0 * l - 1.0)) * s;
+            double x = c * (1.0 - Math.Abs((h / 60.0) % 2.0 - 1.0));
+            double m = l - c / 2.0;
+
+            double r, g, b;
+            if (h < 60) { r = c; g = x; b = 0; }
+            else if (h < 120) { r = x; g = c; b = 0; }
+            else if (h < 180) { r = 0; g = c; b = x; }
+            else if (h < 240) { r = 0; g = x; b = c; }
+            else if (h < 300) { r = x; g = 0; b = c; }
+            else { r = c; g = 0; b = x; }
+
+            return Color.FromRgb(
+                (byte)Math.Clamp((int)Math.Round((r + m) * 255.0), 0, 255),
+                (byte)Math.Clamp((int)Math.Round((g + m) * 255.0), 0, 255),
+                (byte)Math.Clamp((int)Math.Round((b + m) * 255.0), 0, 255));
+        }
+
+        private void BtnCustomEditPrimary_Click(object sender, RoutedEventArgs e)
+        {
+            _editingSecondaryCustomColor = false;
+            SyncCustomColorStudioUi();
+        }
+
+        private void BtnCustomEditSecondary_Click(object sender, RoutedEventArgs e)
+        {
+            _editingSecondaryCustomColor = true;
+            SyncCustomColorStudioUi();
+        }
+
+        private void CustomColorSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (!_isInitialized || _suppressCustomColorSliders) return;
+            double h = SliderCustomHue.Value;
+            double s = SliderCustomSat.Value / 100.0;
+            double l = SliderCustomLight.Value / 100.0;
+
+            Color c = HslToColor(h, s, l);
+            string hex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+            _suppressCustomColorSliders = true;
+            TxtCustomHueVal.Text = $"{(int)Math.Round(h)}°";
+            TxtCustomSatVal.Text = $"{(int)Math.Round(SliderCustomSat.Value)}%";
+            TxtCustomLightVal.Text = $"{(int)Math.Round(SliderCustomLight.Value)}%";
+            TxtCustomAccentHex.Text = hex;
+            _suppressCustomColorSliders = false;
+
+            ApplyCustomColorFromHex(hex, syncSliders: false);
+        }
+
+        private void TxtCustomAccentHex_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!_isInitialized || _suppressCustomColorSliders) return;
+            if (TryNormalizeHexColor(TxtCustomAccentHex.Text, out string norm))
+            {
+                ApplyCustomColorFromHex(norm, syncSliders: true);
+            }
+        }
+
         private void UpdateSwatchSelectionHighlights()
         {
             foreach (var kv in _themeSwatchButtons)
@@ -939,6 +1184,7 @@ namespace AionToolPro.Desktop
                 }
                 _suppressVisualSliders = false;
             }
+            SyncCustomColorStudioUi();
             ApplyVisualState(animateTheme: true, forceBackdropRefresh: true);
             if (_isInitialized) SaveCurrentSettings();
         }
@@ -965,16 +1211,29 @@ namespace AionToolPro.Desktop
         private void LoadPersistedSettingsIfAvailable()
         {
             var saved = _service.LoadSavedSettings();
-            if (saved == null) return;
-            ApplySettingsModelToUi(saved);
+            if (saved == null)
+            {
+                // First run defaults: Minimize to System Tray ON
+                ChkMinimizeToTray.IsChecked = true;
+                SyncCustomColorStudioUi();
+                return;
+            }
+            ApplySettingsModelToUi(saved, preferCurrentlyActiveAdapter: true);
         }
 
-        private void ApplySettingsModelToUi(AppSettingsModel saved)
+        private void ApplySettingsModelToUi(AppSettingsModel saved, bool preferCurrentlyActiveAdapter = false)
         {
             ChkEnableLogging.IsChecked = saved.LogEnabled;
             ChkDarkMode.IsChecked = saved.IsDarkMode;
             ChkMinimizeToTray.IsChecked = saved.MinimizeToTray;
             _service.EnableActionLog = saved.LogEnabled;
+
+            _enableDiagnosticLogs = saved.EnableDiagnosticLogs;
+            _service.EnableDiagnosticLogs = _enableDiagnosticLogs;
+            ChkDiagnosticLogs.IsChecked = _enableDiagnosticLogs;
+
+            _enableWindowsDoh = saved.EnableWindowsDoh && Environment.OSVersion.Version.Build >= 22000;
+            ChkEnableWindowsDoh.IsChecked = _enableWindowsDoh;
 
             _currentLang = saved.LanguageCode == "fa" ? "fa" : "en";
             ComboLanguage.SelectedIndex = _currentLang == "fa" ? 1 : 0;
@@ -986,6 +1245,11 @@ namespace AionToolPro.Desktop
             _intranetPingTarget = IntranetPingTargets.Any(i => i.Host.Equals(saved.IntranetPingTarget, StringComparison.OrdinalIgnoreCase))
                 ? saved.IntranetPingTarget.Trim()
                 : IntranetPingTargets[0].Host;
+
+            if (TryNormalizeHexColor(saved.CustomAccentHex, out string normAcc))
+                _customAccentHex = normAcc;
+            if (TryNormalizeHexColor(saved.CustomSecondaryHex, out string normSec))
+                _customSecondaryHex = normSec;
 
             _currentTheme = AioCatalog.Themes.FirstOrDefault(t => t.Id == saved.ThemeId) ?? AioCatalog.Themes[0];
             _currentSurface = AioCatalog.SurfacePalettes.FirstOrDefault(s => s.Id == saved.SurfacePaletteId) ?? AioCatalog.SurfacePalettes[0];
@@ -1002,17 +1266,33 @@ namespace AionToolPro.Desktop
             SliderContrast.Value = Math.Round(_contrastLevel * 100);
             _suppressVisualSliders = false;
 
+            SyncCustomColorStudioUi();
             UpdateVisualSliderLabels();
             UpdateSwatchSelectionHighlights();
 
+            // On startup, ALWAYS stay attached to the real active internet adapter detected by GetBestInterface;
+            // only restore saved.InterfaceName if it is ALSO actively connected (never switch to a disconnected old adapter!).
             if (!string.IsNullOrWhiteSpace(saved.InterfaceName) &&
                 InterfaceCombo.ItemsSource is IEnumerable<NetworkAdaptorItem> list)
             {
-                var match = list.FirstOrDefault(x => x.Name.Equals(saved.InterfaceName, StringComparison.OrdinalIgnoreCase));
-                if (match != null)
+                var items = list.ToList();
+                var match = items.FirstOrDefault(x => x.Name.Equals(saved.InterfaceName, StringComparison.OrdinalIgnoreCase));
+                bool anyConnected = items.Any(x => x.HealthState == AdaptorHealthState.ConnectedGreen);
+
+                if (match != null && (!preferCurrentlyActiveAdapter || match.HealthState == AdaptorHealthState.ConnectedGreen || !anyConnected))
                 {
-                    InterfaceCombo.SelectedItem = match;
-                    _selectedInterface = match.Name;
+                    // If another adapter is the OS active internet route while saved is not, prefer the active internet route on startup
+                    var activeRoute = items.FirstOrDefault(x => x.IsActiveInternetRoute && x.HealthState == AdaptorHealthState.ConnectedGreen);
+                    if (preferCurrentlyActiveAdapter && activeRoute != null && !match.IsActiveInternetRoute)
+                    {
+                        InterfaceCombo.SelectedItem = activeRoute;
+                        _selectedInterface = activeRoute.Name;
+                    }
+                    else
+                    {
+                        InterfaceCombo.SelectedItem = match;
+                        _selectedInterface = match.Name;
+                    }
                 }
             }
         }
@@ -1067,7 +1347,11 @@ namespace AionToolPro.Desktop
                 _glassMode,
                 _transparencyPercent,
                 _brightnessLevel,
-                _contrastLevel);
+                _contrastLevel,
+                _customAccentHex,
+                _customSecondaryHex,
+                _enableDiagnosticLogs,
+                _enableWindowsDoh);
         }
 
         private async Task LoadNetworkInterfacesAsync(bool preserveSelection = false)
@@ -1090,9 +1374,11 @@ namespace AionToolPro.Desktop
                 }
             }
 
-            var connectedGreen = adaptors.FirstOrDefault(a => a.HealthState == AdaptorHealthState.ConnectedGreen) ?? adaptors[0];
-            InterfaceCombo.SelectedItem = connectedGreen;
-            _selectedInterface = connectedGreen.Name;
+            var bestActive = adaptors.FirstOrDefault(a => a.IsActiveInternetRoute && a.HealthState == AdaptorHealthState.ConnectedGreen)
+                ?? adaptors.FirstOrDefault(a => a.HealthState == AdaptorHealthState.ConnectedGreen)
+                ?? adaptors[0];
+            InterfaceCombo.SelectedItem = bestActive;
+            _selectedInterface = bestActive.Name;
         }
 
         // ==================== BILINGUAL & FULL RTL LANGUAGE ENGINE ====================
@@ -1239,10 +1525,19 @@ namespace AionToolPro.Desktop
             LblBrightnessSlider.Text       = fa ? "روشنایی (Brightness)" : "Brightness";
             LblContrastSlider.Text         = fa ? "کنتراست (Contrast)" : "Contrast";
             BtnResetVisuals.Content        = fa ? "↺ بازگشت پیش‌فرض" : "↺ Reset Visuals";
-            ChkRememberSettings.Content = fa ? "ذخیره تنظیمات" : "Remember Settings";
-            ChkEnableLogging.Content    = fa ? "ثبت گزارش" : "Save Action Log";
-            ChkMinimizeToTray.Content   = fa ? "کوچک شدن در سینی سیستم (Tray)" : "Minimize to System Tray";
-            ChkStartWithWindows.Content = fa ? "اجرای خودکار با ویندوز" : "Start with Windows";
+            LblCustomColorStudioTitle.Text = fa ? "🎨 استودیو رنگ دلخواه" : "🎨 Custom Color Studio";
+            BtnCustomEditPrimary.Content   = fa ? "● رنگ اصلی" : "● Primary";
+            BtnCustomEditSecondary.Content = fa ? "● رنگ دوم" : "● Secondary";
+            LblCustomHue.Text              = fa ? "طیف رنگ (Hue)" : "Hue (Color)";
+            LblCustomSat.Text              = fa ? "غلظت رنگ (Saturation)" : "Saturation";
+            LblCustomLight.Text            = fa ? "روشنی رنگ (Lightness)" : "Lightness";
+            ChkRememberSettings.Content    = fa ? "ذخیره تنظیمات" : "Remember Settings";
+            ChkEnableLogging.Content       = fa ? "ثبت گزارش" : "Save Action Log";
+            ChkDiagnosticLogs.Content      = fa ? "🐞 ثبت لاگ تکمیلی دیباگ" : "🐞 Diagnostic Bug Logs";
+            ChkEnableWindowsDoh.Content    = fa ? "🔒 دی‌ان‌اس امن ویندوز (DoH)" : "🔒 Windows DoH (Encrypted DNS)";
+            BtnSendBugReport.Content       = fa ? "🐞 ارسال گزارش باگ" : "🐞 Send Bug Report";
+            ChkMinimizeToTray.Content      = fa ? "کوچک شدن در سینی سیستم (Tray)" : "Minimize to System Tray";
+            ChkStartWithWindows.Content    = fa ? "اجرای خودکار با ویندوز" : "Start with Windows";
             LblActionLogTitle.Text      = fa ? "گزارش عملکرد" : "Action Log";
             BtnViewLog.Content          = fa ? "بروزرسانی" : "Refresh";
             BtnClearLog.Content         = fa ? "پاکسازی" : "Clear";
@@ -1346,7 +1641,12 @@ namespace AionToolPro.Desktop
                     double rxMb = Math.Round(snap.BytesReceived / 1048576.0, 1);
                     double txMb = Math.Round(snap.BytesSent / 1048576.0, 1);
 
-                    if (_lastTick != DateTime.MinValue)
+                    if (!snap.IsUp)
+                    {
+                        TxtSpeedDl.Text = "⬇ 0 KB/s";
+                        TxtSpeedUl.Text = "⬆ 0 KB/s";
+                    }
+                    else if (_lastTick != DateTime.MinValue)
                     {
                         double secs = (DateTime.Now - _lastTick).TotalSeconds;
                         if (secs > 0.1)
@@ -1381,8 +1681,9 @@ namespace AionToolPro.Desktop
 
                     string primaryDns = snap.DnsServers.FirstOrDefault() ?? "DHCP";
                     var matchedProvider = _service.GetAllDnsProviders().FirstOrDefault(p => p.PrimaryIp == primaryDns);
+                    bool dohActive = _enableWindowsDoh && matchedProvider != null && matchedProvider.HasDoh;
                     TxtActiveDns.Text = matchedProvider != null
-                        ? $"{primaryDns} · {matchedProvider.Name}"
+                        ? $"{primaryDns} · {matchedProvider.Name}{(dohActive ? " · DoH" : "")}"
                         : (snap.DnsServers.Count > 0 ? string.Join(" , ", snap.DnsServers) : "Automatic DHCP");
 
                     if (_lastDetectedPrimaryDns != primaryDns)
@@ -1393,9 +1694,17 @@ namespace AionToolPro.Desktop
 
                     string rStr = FormatShortPing(_routerPingTracker, hasRouter);
                     TxtDashboardAdapterSummary.Text =
-                        $"Adaptor: {snap.InterfaceName}   ·   IPv4: {snap.Ipv4Address}   ·   Router: {(hasRouter ? _detectedRouterIp : "None")} · {rStr}\r\n" +
+                        $"Adaptor: {snap.InterfaceName} ({snap.OperationalStatus} · {snap.LinkSpeedLabel})   ·   IPv4: {snap.Ipv4Address}   ·   Router: {(hasRouter ? _detectedRouterIp : "None")} · {rStr}\r\n" +
                         $"System DNS: {(snap.DnsServers.Count > 0 ? string.Join(" , ", snap.DnsServers) : "Automatic DHCP")}" +
-                        (matchedProvider != null ? $"   ·   {matchedProvider.Name}" : "");
+                        (matchedProvider != null ? $"   ·   {matchedProvider.Name}{(dohActive ? " (Encrypted DoH)" : "")}" : "");
+                }
+                else
+                {
+                    TxtSpeedDl.Text = "⬇ 0 KB/s";
+                    TxtSpeedUl.Text = "⬆ 0 KB/s";
+                    TxtAdapterState.Text = snap.OperationalStatus;
+                    TxtActiveDns.Text = "Unavailable";
+                    TxtDashboardAdapterSummary.Text = $"Adaptor: {snap.InterfaceName} ({snap.OperationalStatus})   ·   IPv4: N/A   ·   Router: None";
                 }
 
                 if (_autoRefreshAppMonitor && ViewNetworkInfo.Visibility == Visibility.Visible)
@@ -1432,10 +1741,8 @@ namespace AionToolPro.Desktop
             _isPingRunning = true;
             try
             {
-                if (string.IsNullOrEmpty(_detectedRouterIp))
-                {
-                    _detectedRouterIp = await _service.DetectRouterGatewayIpAsync(_selectedInterface);
-                }
+                string activeIface = _selectedInterface;
+                _detectedRouterIp = await _service.DetectRouterGatewayIpAsync(activeIface);
 
                 int probeGen = _pingGeneration;
                 string globalTarget = _globalPingTarget;
@@ -1444,18 +1751,16 @@ namespace AionToolPro.Desktop
                 string routerIp = _detectedRouterIp;
                 bool hasRouter = !string.IsNullOrWhiteSpace(routerIp);
 
-                // Enable TCP fallback cleanly when ICMP appears blocked (>=2 consecutive drops or already in TCP mode),
-                // while still probing ICMP first on every tick so recovery is automatic.
                 bool tryGlobalTcp = _globalPingTracker.ConsecutiveTimeouts >= 2 || _globalPingTracker.CurrentTransport == ProbeTransport.TcpFallback;
                 bool tryIntranetTcp = _intranetPingTracker.ConsecutiveTimeouts >= 2 || _intranetPingTracker.CurrentTransport == ProbeTransport.TcpFallback;
                 bool tryRouterTcp = _routerPingTracker.ConsecutiveTimeouts >= 1 || _routerPingTracker.CurrentTransport == ProbeTransport.TcpFallback;
 
                 var tRouter = hasRouter
-                    ? _service.ProbeHostAccurateAsync(routerIp, timeoutMs: 1200, fallbackTcpPorts: new[] { 80, 443 }, allowTcpFallback: tryRouterTcp, treatTcpRefusedAsAlive: true)
+                    ? _service.ProbeHostOnAdapterAsync(activeIface, routerIp, timeoutMs: 1200, fallbackTcpPorts: new[] { 80, 443 }, allowTcpFallback: tryRouterTcp, treatTcpRefusedAsAlive: true)
                     : Task.FromResult(new PingProbeResult(null, ProbeTransport.Timeout));
 
-                var tIntranet = _service.ProbeHostAccurateAsync(intranetTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 80 }, allowTcpFallback: tryIntranetTcp);
-                var tGlobal = _service.ProbeHostAccurateAsync(globalTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 53 }, allowTcpFallback: tryGlobalTcp);
+                var tIntranet = _service.ProbeHostOnAdapterAsync(activeIface, intranetTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 80 }, allowTcpFallback: tryIntranetTcp);
+                var tGlobal = _service.ProbeHostOnAdapterAsync(activeIface, globalTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 53 }, allowTcpFallback: tryGlobalTcp);
 
                 await Task.WhenAll(tGlobal, tIntranet, tRouter);
                 if (_isClosing || probeGen != _pingGeneration) return;
@@ -1823,8 +2128,112 @@ namespace AionToolPro.Desktop
             if (!_isInitialized) return;
             _service.RememberSettings = ChkRememberSettings.IsChecked == true;
             _service.EnableActionLog = ChkEnableLogging.IsChecked == true;
+            _enableDiagnosticLogs = ChkDiagnosticLogs.IsChecked == true;
+            _service.EnableDiagnosticLogs = _enableDiagnosticLogs;
+            if (_enableDiagnosticLogs)
+                _service.WriteDiagnosticLog("Settings", $"Diagnostic bug logging enabled (Adapter={_selectedInterface}, Theme={_currentTheme.Name}, Glass={_glassMode}, DoH={_enableWindowsDoh}).");
             SaveCurrentSettings();
         }
+
+        private async void ChkEnableWindowsDoh_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_isInitialized) return;
+            bool fa = _currentLang == "fa";
+            bool wantDoh = ChkEnableWindowsDoh.IsChecked == true;
+
+            if (wantDoh && Environment.OSVersion.Version.Build < 22000)
+            {
+                _isInitialized = false;
+                ChkEnableWindowsDoh.IsChecked = false;
+                _isInitialized = true;
+                _enableWindowsDoh = false;
+                MessageBox.Show(
+                    fa ? "قابلیت دی‌ان‌اس امن بومی (DoH) نیازمند ویندوز ۱۱ (بیلد 22000 به بالا) است."
+                       : "Native Windows DNS-over-HTTPS (DoH) requires Windows 11 (Build 22000+).",
+                    "Windows DoH",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            _enableWindowsDoh = wantDoh;
+            SaveCurrentSettings();
+            RefreshDnsCatalogUi();
+
+            // If user already has a DoH-supported DNS active on this adapter, apply/disable DoH immediately!
+            var currentMatched = _service.GetAllDnsProviders().FirstOrDefault(p => p.PrimaryIp == _lastDetectedPrimaryDns);
+            if (currentMatched != null && currentMatched.HasDoh)
+            {
+                await SafeRunAsync(async () =>
+                {
+                    if (_enableWindowsDoh)
+                    {
+                        var res = await _service.EnableDnsOverHttpsAsync(_selectedInterface, currentMatched);
+                        if (!res.Success)
+                            MessageBox.Show(res.Message, "Windows DoH", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    else
+                    {
+                        _service.ClearPerInterfaceDohRegistry(_selectedInterface);
+                        await _service.FlushDnsCacheAsync(_selectedInterface);
+                        EnqueueConsoleLine($"[DoH] Disabled Windows DoH encryption on '{_selectedInterface}'; continuing with standard DNS.");
+                    }
+                    await RefreshRealTimeTelemetryAsync();
+                }, "ToggleWindowsDoH");
+            }
+            else
+            {
+                EnqueueConsoleLine(_enableWindowsDoh
+                    ? "[DoH] Windows DoH enabled — clicking any DNS marked with 'DoH' will connect over encrypted HTTPS."
+                    : "[DoH] Windows DoH disabled — DNS servers will connect using standard DNS.");
+            }
+        }
+
+        private async void BtnSendBugReport_Click(object sender, RoutedEventArgs e) =>
+            await SafeRunAsync(async () =>
+            {
+                bool fa = _currentLang == "fa";
+                string desktopDir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                var dlg = new SaveFileDialog
+                {
+                    Title = fa ? "ذخیره بسته گزارش باگ" : "Save Diagnostic Bug Report Bundle",
+                    Filter = "ZIP Archive (*.zip)|*.zip",
+                    InitialDirectory = System.IO.Directory.Exists(desktopDir) ? desktopDir : string.Empty,
+                    FileName = $"AionToolPro_BugReport_{DateTime.Now:yyyyMMdd_HHmmss}.zip"
+                };
+                if (dlg.ShowDialog() != true) return;
+
+                string settingsSummary = $"Theme={_currentTheme.Name}({_currentTheme.Id}), Surface={_currentSurface.Name}, Glass={_glassMode}, Trans={_transparencyPercent}%, DoH={_enableWindowsDoh}, DiagLog={_enableDiagnosticLogs}, Lang={_currentLang}";
+                var (ok, zipPath, summary, msg) = await _service.ExportBugReportAsync(dlg.FileName, _selectedInterface, settingsSummary);
+                if (!ok)
+                {
+                    MessageBox.Show(msg, "Bug Report", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                try { Clipboard.SetText(summary); } catch { }
+
+                var openIssue = MessageBox.Show(
+                    fa
+                        ? $"بسته گزارش باگ با موفقیت ذخیره شد:\n{zipPath}\n\nخلاصه گزارش در کلیپ‌بورد کپی شد (بدون هیچ اطلاعات حساس یا رمز وای‌فای).\nآیا صفحه ثبت باگ در گیت‌هاب باز شود تا فایل ZIP را پیوست و ارسال کنید؟"
+                        : $"Bug report ZIP saved cleanly to:\n{zipPath}\n\nA sanitized summary was copied to your clipboard (no Wi-Fi passwords or secrets).\nOpen the GitHub Issues page now to attach and submit it?",
+                    fa ? "گزارش باگ آماده ارسال" : "Bug Report Ready",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information);
+
+                if (openIssue == MessageBoxResult.Yes)
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "https://github.com/Yoqaizo/AionToolPro/issues/new",
+                            UseShellExecute = true
+                        });
+                    }
+                    catch { }
+                }
+            }, "SendBugReport");
 
         private async void ChkStartWithWindows_Changed(object sender, RoutedEventArgs e)
         {
@@ -1864,7 +2273,11 @@ namespace AionToolPro.Desktop
                     _glassMode,
                     _transparencyPercent,
                     _brightnessLevel,
-                    _contrastLevel);
+                    _contrastLevel,
+                    _customAccentHex,
+                    _customSecondaryHex,
+                    _enableDiagnosticLogs,
+                    _enableWindowsDoh);
 
                 var res = await _service.ExportSettingsBundleAsync(dlg.FileName, current);
                 MessageBox.Show(res.Message, "Export Settings", MessageBoxButton.OK, res.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
@@ -1900,14 +2313,9 @@ namespace AionToolPro.Desktop
         private Task ApplyDnsProviderWithUiFeedbackAsync(DnsProviderModel provider) =>
             SafeRunAsync(async () =>
             {
-                EnqueueConsoleLine($"Applying DNS {provider.Name} ({provider.PrimaryIp}, {provider.SecondaryIp}) on {_selectedInterface}...");
-                var res = await _service.ApplyDnsAsync(
-                    _selectedInterface,
-                    provider.PrimaryIp,
-                    provider.SecondaryIp,
-                    provider.Name,
-                    provider.PrimaryIpv6,
-                    provider.SecondaryIpv6);
+                bool willUseDoh = _enableWindowsDoh && provider.HasDoh && Environment.OSVersion.Version.Build >= 22000;
+                EnqueueConsoleLine($"Applying {(willUseDoh ? "Encrypted DoH " : "")}DNS {provider.Name} ({provider.PrimaryIp}, {provider.SecondaryIp}) on {_selectedInterface}...");
+                var res = await _service.ApplyProviderDnsAsync(_selectedInterface, provider, _enableWindowsDoh);
 
                 if (!res.Success)
                 {
@@ -2854,6 +3262,7 @@ namespace AionToolPro.Desktop
                 BtnUpdateStartDownload.Visibility = Visibility.Collapsed;
                 BtnUpdateRetry.Visibility = Visibility.Collapsed;
                 BtnUpdateClose.Visibility = Visibility.Collapsed;
+                BtnUpdateCancel.IsEnabled = true;
                 BtnUpdateCancel.Visibility = Visibility.Visible;
                 BtnUpdateModalCloseTop.IsEnabled = false;
 
@@ -2924,6 +3333,14 @@ namespace AionToolPro.Desktop
                     BtnUpdateStartDownload.Visibility = Visibility.Visible;
                     BtnUpdateClose.Visibility = Visibility.Visible;
                 }
+                catch (Exception ex)
+                {
+                    if (!_isClosing)
+                    {
+                        BarUpdateProgress.IsIndeterminate = false;
+                        ShowUpdateErrorUi(ex.Message);
+                    }
+                }
                 finally
                 {
                     _isUpdateBusy = false;
@@ -2974,6 +3391,7 @@ namespace AionToolPro.Desktop
                 BtnUpdateStartDownload.Visibility = Visibility.Collapsed;
                 BtnUpdateRetry.Visibility = Visibility.Collapsed;
                 BtnUpdateClose.Visibility = Visibility.Collapsed;
+                BtnUpdateCancel.IsEnabled = true;
                 BtnUpdateCancel.Visibility = Visibility.Visible;
                 BtnUpdateModalCloseTop.IsEnabled = false;
 
@@ -3048,6 +3466,14 @@ namespace AionToolPro.Desktop
 
                     ShowUpdateErrorUi(result.Message);
                 }
+                catch (Exception ex)
+                {
+                    if (!_isClosing)
+                    {
+                        BarUpdateProgress.IsIndeterminate = false;
+                        ShowUpdateErrorUi(ex.Message);
+                    }
+                }
                 finally
                 {
                     _isUpdateBusy = false;
@@ -3101,7 +3527,6 @@ namespace AionToolPro.Desktop
             BtnUpdateCancel.IsEnabled = false;
             TxtUpdateStage.Text = fa ? "در حال لغو و پاکسازی..." : "Cancelling and cleaning up...";
             try { _updateCts?.Cancel(); } catch { }
-            BtnUpdateCancel.IsEnabled = true;
         }
 
         private async void BtnUpdateRetry_Click(object sender, RoutedEventArgs e)

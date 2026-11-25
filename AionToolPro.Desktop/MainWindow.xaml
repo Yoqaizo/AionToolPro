@@ -127,7 +127,7 @@
                         <Border DockPanel.Dock="Bottom" Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,10,0,0">
                             <StackPanel>
                                 <TextBlock Text="Created By Yoqaizo" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}"/>
-                                <TextBlock x:Name="TxtAppVersion" Text="0.9.1" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource MutedTextBrush}" Margin="0,1,0,0"/>
+                                <TextBlock x:Name="TxtAppVersion" Text="0.9.2" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource MutedTextBrush}" Margin="0,1,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -613,6 +613,79 @@
                                         <TextBlock x:Name="LblThemeSelect" Text="Accent Theme" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,6"/>
                                         <WrapPanel x:Name="ThemeSwatchesWrapPanel" Margin="0,0,0,10"/>
 
+                                        <!-- Expandable Full-Spectrum Custom Accent Color Studio -->
+                                        <Border x:Name="CustomColorStudioPanel"
+                                                Background="{DynamicResource InputSurfaceBrush}"
+                                                BorderBrush="{DynamicResource AccentBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="10"
+                                                Padding="14,11"
+                                                Margin="0,0,0,12"
+                                                Visibility="Collapsed">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock x:Name="LblCustomColorStudioTitle" Text="🎨 Custom Color Studio" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                                        <Button x:Name="BtnCustomEditPrimary" Content="● Primary" Click="BtnCustomEditPrimary_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="10,4" FontSize="11" Margin="0,0,6,0"/>
+                                                        <Button x:Name="BtnCustomEditSecondary" Content="● Secondary" Click="BtnCustomEditSecondary_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="10,4" FontSize="11" Margin="0"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" FlowDirection="LeftToRight">
+                                                        <Border x:Name="BdCustomColorPreview" Width="26" Height="26" CornerRadius="7" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" Margin="0,0,8,0"/>
+                                                        <TextBox x:Name="TxtCustomAccentHex" Width="88" Height="28" FontFamily="{StaticResource MonoFontFamily}" FontSize="11.5" Text="#5865F2" FlowDirection="LeftToRight" TextChanged="TxtCustomAccentHex_TextChanged" ToolTip="Type any #RRGGBB hex color"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <!-- Full 360-degree Rainbow Hue Bar + HSL Sliders -->
+                                                <UniformGrid Columns="3" Margin="0,0,0,8">
+                                                    <StackPanel Margin="0,0,10,0">
+                                                        <Grid Margin="0,0,0,3">
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock x:Name="LblCustomHue" Grid.Column="0" Text="Hue (Color)" FontSize="11" Foreground="{DynamicResource MutedTextBrush}"/>
+                                                            <TextBlock x:Name="TxtCustomHueVal" Grid.Column="1" Text="235°" FontSize="11" FontWeight="Bold" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource AccentBrush}"/>
+                                                        </Grid>
+                                                        <Border Height="5" CornerRadius="2.5" Margin="0,0,0,2">
+                                                            <Border.Background>
+                                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                                    <GradientStop Color="#FF0000" Offset="0.00"/>
+                                                                    <GradientStop Color="#FFFF00" Offset="0.17"/>
+                                                                    <GradientStop Color="#00FF00" Offset="0.33"/>
+                                                                    <GradientStop Color="#00FFFF" Offset="0.50"/>
+                                                                    <GradientStop Color="#0000FF" Offset="0.67"/>
+                                                                    <GradientStop Color="#FF00FF" Offset="0.83"/>
+                                                                    <GradientStop Color="#FF0000" Offset="1.00"/>
+                                                                </LinearGradientBrush>
+                                                            </Border.Background>
+                                                        </Border>
+                                                        <Slider x:Name="SliderCustomHue" Minimum="0" Maximum="360" Value="235" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="CustomColorSlider_ValueChanged" FlowDirection="LeftToRight"/>
+                                                    </StackPanel>
+
+                                                    <StackPanel Margin="5,0,5,0">
+                                                        <Grid Margin="0,0,0,3">
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock x:Name="LblCustomSat" Grid.Column="0" Text="Saturation" FontSize="11" Foreground="{DynamicResource MutedTextBrush}"/>
+                                                            <TextBlock x:Name="TxtCustomSatVal" Grid.Column="1" Text="86%" FontSize="11" FontWeight="Bold" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource AccentBrush}"/>
+                                                        </Grid>
+                                                        <Slider x:Name="SliderCustomSat" Minimum="15" Maximum="100" Value="86" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="CustomColorSlider_ValueChanged" FlowDirection="LeftToRight" Margin="0,7,0,0"/>
+                                                    </StackPanel>
+
+                                                    <StackPanel Margin="10,0,0,0">
+                                                        <Grid Margin="0,0,0,3">
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                            <TextBlock x:Name="LblCustomLight" Grid.Column="0" Text="Lightness" FontSize="11" Foreground="{DynamicResource MutedTextBrush}"/>
+                                                            <TextBlock x:Name="TxtCustomLightVal" Grid.Column="1" Text="65%" FontSize="11" FontWeight="Bold" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource AccentBrush}"/>
+                                                        </Grid>
+                                                        <Slider x:Name="SliderCustomLight" Minimum="30" Maximum="80" Value="65" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="CustomColorSlider_ValueChanged" FlowDirection="LeftToRight" Margin="0,7,0,0"/>
+                                                    </StackPanel>
+                                                </UniformGrid>
+
+                                                <WrapPanel x:Name="CustomColorPresetsWrapPanel" FlowDirection="LeftToRight"/>
+                                            </StackPanel>
+                                        </Border>
+
                                         <TextBlock x:Name="LblAppBgPaletteTitle" Text="Background Surface" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,6"/>
                                         <WrapPanel x:Name="SurfaceSwatchesWrapPanel" Margin="0,0,0,10"/>
 
@@ -662,12 +735,14 @@
                                             </StackPanel>
                                         </Border>
 
-                                        <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="12,8">
+                                        <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="12,9">
                                             <WrapPanel VerticalAlignment="Center">
-                                                <CheckBox x:Name="ChkMinimizeToTray" Content="Minimize to System Tray" IsChecked="False" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,2,20,2" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
-                                                <CheckBox x:Name="ChkStartWithWindows" Content="Start with Windows" IsChecked="False" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,2,20,2" Checked="ChkStartWithWindows_Changed" Unchecked="ChkStartWithWindows_Changed"/>
-                                                <CheckBox x:Name="ChkRememberSettings" Content="Remember Settings" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,2,20,2" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
-                                                <CheckBox x:Name="ChkEnableLogging" Content="Save Action Log" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,2,0,2" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
+                                                <CheckBox x:Name="ChkMinimizeToTray" Content="Minimize to System Tray" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,3,18,3" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
+                                                <CheckBox x:Name="ChkStartWithWindows" Content="Start with Windows" IsChecked="False" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,3,18,3" Checked="ChkStartWithWindows_Changed" Unchecked="ChkStartWithWindows_Changed"/>
+                                                <CheckBox x:Name="ChkEnableWindowsDoh" Content="🔒 Windows DoH (Encrypted DNS)" IsChecked="False" FontWeight="SemiBold" Foreground="{DynamicResource SuccessGreenBrush}" VerticalAlignment="Center" Margin="0,3,18,3" Checked="ChkEnableWindowsDoh_Changed" Unchecked="ChkEnableWindowsDoh_Changed" ToolTip="Automatically connect DoH-supported DNS servers via Windows 11 DNS-over-HTTPS"/>
+                                                <CheckBox x:Name="ChkRememberSettings" Content="Remember Settings" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,3,18,3" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
+                                                <CheckBox x:Name="ChkEnableLogging" Content="Save Action Log" IsChecked="True" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,3,18,3" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed"/>
+                                                <CheckBox x:Name="ChkDiagnosticLogs" Content="🐞 Diagnostic Bug Logs" IsChecked="False" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Margin="0,3,0,3" Checked="ChkSettings_Changed" Unchecked="ChkSettings_Changed" ToolTip="Collect additional technical diagnostics (diagnostics.log) to include in bug reports"/>
                                             </WrapPanel>
                                         </Border>
                                     </StackPanel>
@@ -684,6 +759,7 @@
                                             <TextBlock x:Name="LblAppUpdateTitle" Grid.Column="0" Text="Updates &amp; Settings Backup" FontSize="14.5" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,10,0"/>
                                             <WrapPanel Grid.Column="1" VerticalAlignment="Center">
                                                 <Button x:Name="BtnCheckUpdate" Content="↻ Check for Updates" Click="BtnCheckUpdate_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="12,6" Margin="0,0,8,0"/>
+                                                <Button x:Name="BtnSendBugReport" Content="🐞 Send Bug Report" Click="BtnSendBugReport_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="11,6" Margin="0,0,8,0" ToolTip="Export sanitized diagnostic logs ZIP and open GitHub issue tracker"/>
                                                 <Button x:Name="BtnExportSettings" Content="📤 Export" Click="BtnExportSettings_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="11,6" Margin="0,0,8,0"/>
                                                 <Button x:Name="BtnImportSettings" Content="📥 Import" Click="BtnImportSettings_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="11,6" Margin="0"/>
                                             </WrapPanel>
@@ -860,7 +936,7 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock x:Name="TxtUpdateVersionFlow"
                                            Grid.Column="0"
-                                           Text="v0.9.1  →  v0.9.2"
+                                           Text="v0.9.2  →  v0.9.3"
                                            FontFamily="{StaticResource MonoFontFamily}"
                                            FontSize="13"
                                            FontWeight="Bold"

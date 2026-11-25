@@ -4,6 +4,17 @@ All notable changes to **AionToolPro** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-11-25
+
+### Backend, DoH, Custom Color Studio & Updater Reliability
+- **Clean Physical Adapter Filter & Startup Active-Route Auto-Connect:** Filtered out virtual, VPN TUN, hypervisor, Bluetooth, Wi-Fi Direct, Npcap, and junk interfaces so only real physical adapters appear. On startup, Win32 `GetBestInterface` (`iphlpapi.dll`) detects the active internet adapter automatically and connects to it cleanly (never overridden by a stale disconnected adapter in saved settings).
+- **Strict Per-Adapter Ping & Telemetry Binding:** Upgraded ping probing (`ProbeHostOnAdapterAsync`) to bind ICMP via Win32 `IcmpSendEcho2Ex` (`SourceAddress`) and TCP fallback sockets strictly to the selected adapter's IPv4 (with transparent WAN routing fallback when a VPN TUN is active), and isolated gateway/DNS/link-speed/Rx-Tx readings strictly to the chosen adapter.
+- **Hardened Auto-Updater (`Check for Updates` Fix):** Added a dedicated `UpdateHttp` client with `Timeout.InfiniteTimeSpan` (fixing 60-second premature download cancellations on large ~75MB installers), automatic GitHub web-redirect fallback when `api.github.com` returns HTTP 403/429 rate limits, accurate distinction between user Cancel vs Timeout, partial-download truncation validation, and guarded UI exception handling so the Update Center modal never stalls.
+- **Full-Spectrum Custom Color Theme Studio:** Added **Custom Color** as the last option in Accent Theme with an expandable HSL Spectrum Studio (360° rainbow Hue, Saturation, Lightness sliders, direct `#HEX` input, Primary/Secondary gradient editor, and 16 quick color dots) persisted across settings & exports.
+- **Native Windows 11 DNS-over-HTTPS (DoH) Toggle & Tiny Card Badges:** Added **Windows DoH (Encrypted DNS)** toggle in Settings and crisp miniature `DoH` badges on all 10 DoH-capable DNS cards (Cloudflare, Google, OpenDNS, ControlD, Mullvad, AliDNS, Quad9, AdGuard, CleanBrowsing, dns0.eu). When enabled, connecting to any DoH-capable DNS automatically registers global `netsh dns` rules (handling pre-existing Windows 11 templates cleanly) and applies per-interface `Dnscache\InterfaceSpecificParameters\{guid}\DohInterfaceSettings` registry flags.
+- **Diagnostic Bug Logs & One-Click Bug Report Export:** Added **Diagnostic Bug Logs** toggle (`diagnostics.log`) and a **Send Bug Report** button that packages sanitized system/adapter info and logs into a ready-to-attach ZIP bundle, copies a summary to the clipboard, and opens the GitHub issue page.
+- **System Tray Enabled by Default:** Changed `MinimizeToTray` default to `true` for seamless background operation out of the box.
+
 ## [0.9.1] - 2026-11-25
 
 ### Visual Hotfix & UI Polish

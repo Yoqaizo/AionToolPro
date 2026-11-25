@@ -1,10 +1,13 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Reflection;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AionToolPro.Desktop.Models;
@@ -13,8 +16,60 @@ namespace AionToolPro.Desktop.Services
 {
     public sealed partial class AioNetworkService
     {
+        private static readonly HttpClient UpdateHttp = CreateUpdaterHttpClient();
+
+        private static HttpClient CreateUpdaterHttpClient()
+        {
+            var handler = new SocketsHttpHandler
+            {
+                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+                ConnectTimeout = TimeSpan.FromSeconds(15),
+                AutomaticDecompression = DecompressionMethods.All,
+                AllowAutoRedirect = true,
+                MaxAutomaticRedirections = 10,
+                SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+                {
+                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13
+                }
+            };
+            var client = new HttpClient(handler)
+            {
+                Timeout = Timeout.InfiniteTimeSpan
+            };
+            client.DefaultRequestHeaders.UserAgent.ParseAdd($"AionToolPro/{GetAppVersionString()}");
+            return client;
+        }
+
         public static Version NormalizeVersion3(Version v) =>
             new(Math.Max(0, v.Major), Math.Max(0, v.Minor), Math.Max(0, v.Build));
+
+        private static bool TryParseReleaseTagVersion(string? rawTag, out Version? parsed)
+        {
+            parsed = null;
+            if (string.IsNullOrWhiteSpace(rawTag)) return false;
+
+            string clean = rawTag.Trim().TrimStart('v', 'V');
+            int dashIdx = clean.IndexOfAny(new[] { '-', '+' });
+            if (dashIdx > 0) clean = clean[..dashIdx];
+
+            if (Version.TryParse(clean, out var v) && v != null)
+            {
+                parsed = NormalizeVersion3(v);
+                return true;
+            }
+
+            var m = Regex.Match(clean, @"(\d+)\.(\d+)(?:\.(\d+))?");
+            if (m.Success)
+            {
+                int maj = int.Parse(m.Groups[1].Value);
+                int min = int.Parse(m.Groups[2].Value);
+                int pat = m.Groups[3].Success ? int.Parse(m.Groups[3].Value) : 0;
+                parsed = new Version(maj, min, pat);
+                return true;
+            }
+
+            return false;
+        }
 
         public static bool IsInstalledCopy()
         {
@@ -37,6 +92,7 @@ namespace AionToolPro.Desktop.Services
             string host = uri.Host;
             return host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
                 || host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith(".github.com", StringComparison.OrdinalIgnoreCase)
                 || host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase);
         }
 
@@ -62,7 +118,6 @@ namespace AionToolPro.Desktop.Services
             if (IsReparsePoint(updatesDir))
                 throw new UnauthorizedAccessException("Blocked: ProgramData\\AionToolPro\\Updates is a reparse point.");
 
-            // Lock NTFS ACL strictly to SYSTEM (*S-1-5-18) and Built-in Administrators (*S-1-5-32-544)
             var aclRes = await _runner.RunAsync(
                 "icacls",
                 new[] { updatesDir, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F" },
@@ -71,17 +126,90 @@ namespace AionToolPro.Desktop.Services
                 timeout: TimeSpan.FromSeconds(15)).ConfigureAwait(false);
 
             if (!aclRes.IsSuccess)
-            {
-                Emit($"[UPDATER WARN] icacls returned code {aclRes.ExitCode}; continuing with elevated directory.");
-            }
+                WriteDiagnosticLog("Updater", $"icacls returned code {aclRes.ExitCode}");
 
             return updatesDir;
+        }
+
+        private async Task<UpdateCheckResult?> CheckForUpdateViaWebFallbackAsync(
+            string githubOwner,
+            string repoName,
+            Version currentVer,
+            CancellationToken token)
+        {
+            try
+            {
+                string webUrl = $"https://github.com/{githubOwner}/{repoName}/releases/latest";
+                WriteDiagnosticLog("Updater", $"Attempting web fallback check: {webUrl}");
+
+                using var req = new HttpRequestMessage(HttpMethod.Get, webUrl);
+                using var resp = await UpdateHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+                var finalUri = resp.RequestMessage?.RequestUri;
+                if (!resp.IsSuccessStatusCode || !IsTrustedGitHubUri(finalUri) || finalUri == null)
+                    return null;
+
+                var m = Regex.Match(finalUri.AbsolutePath, @"/releases/tag/([^/?#]+)", RegexOptions.IgnoreCase);
+                if (!m.Success) return null;
+
+                string tag = Uri.UnescapeDataString(m.Groups[1].Value);
+                if (!TryParseReleaseTagVersion(tag, out var latestVer) || latestVer == null)
+                    return null;
+
+                if (latestVer <= currentVer)
+                {
+                    string upToDate = $"You are already running the latest version (v{currentVer}).";
+                    Emit($"[UPDATER] {upToDate}");
+                    return new UpdateCheckResult(false, currentVer.ToString(), latestVer.ToString(), "", null, null, null, upToDate, IsError: false, IsCancelled: false);
+                }
+
+                string expectedAsset = $"AionToolPro_Setup_v{latestVer}.exe";
+                string dlUrl = $"https://github.com/{githubOwner}/{repoName}/releases/download/{tag}/{expectedAsset}";
+                string csUrl = $"https://github.com/{githubOwner}/{repoName}/releases/download/{tag}/checksums.txt";
+
+                using var headReq = new HttpRequestMessage(HttpMethod.Head, dlUrl);
+                using var headResp = await UpdateHttp.SendAsync(headReq, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+                if (!headResp.IsSuccessStatusCode || !IsTrustedGitHubUri(headResp.RequestMessage?.RequestUri))
+                {
+                    return new UpdateCheckResult(false, currentVer.ToString(), latestVer.ToString(), "", null, null, null,
+                        $"Version v{latestVer} exists on GitHub, but installer asset '{expectedAsset}' is not ready yet.", IsError: true);
+                }
+
+                string? validCsUrl = null;
+                try
+                {
+                    using var csHead = new HttpRequestMessage(HttpMethod.Head, csUrl);
+                    using var csResp = await UpdateHttp.SendAsync(csHead, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+                    if (csResp.IsSuccessStatusCode && IsTrustedGitHubUri(csResp.RequestMessage?.RequestUri))
+                        validCsUrl = csUrl;
+                }
+                catch { }
+
+                WriteDiagnosticLog("Updater", $"Web fallback succeeded: found v{latestVer} ({expectedAsset}, sha256={(validCsUrl != null)})");
+                return new UpdateCheckResult(true, currentVer.ToString(), latestVer.ToString(),
+                    $"Official release {tag} on GitHub (retrieved via direct web fallback).",
+                    dlUrl, validCsUrl, expectedAsset,
+                    $"New version v{latestVer} is available (current: v{currentVer}).", IsError: false, IsCancelled: false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog("Updater", $"Web fallback error: {ex.Message}");
+                return null;
+            }
         }
 
         public async Task<UpdateCheckResult> CheckForUpdateInfoAsync(string githubOwner, string repoName, CancellationToken token)
         {
             Emit("[UPDATER] Checking GitHub Releases for newer version...");
             string fallbackVer = GetAppVersionString();
+
+            using var apiTimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, apiTimeoutCts.Token);
+            var ct = linkedCts.Token;
+
             try
             {
                 var rawCurrent = Assembly.GetExecutingAssembly().GetName().Version;
@@ -92,71 +220,106 @@ namespace AionToolPro.Desktop.Services
 
                 using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{githubOwner}/{repoName}/releases/latest");
                 request.Headers.Accept.ParseAdd("application/vnd.github+json");
+                request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
 
-                using var response = await SharedHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
-                if (!IsTrustedGitHubUri(response.RequestMessage?.RequestUri))
-                    return new UpdateCheckResult(false, currentVer.ToString(), currentVer.ToString(), "", null, null, null, "Blocked: GitHub API redirected to an untrusted host.", IsError: true);
-
-                if (!response.IsSuccessStatusCode)
-                    return new UpdateCheckResult(false, currentVer.ToString(), currentVer.ToString(), "", null, null, null, $"Could not check updates (HTTP {(int)response.StatusCode}).", IsError: true);
-
-                string json = await response.Content.ReadAsStringAsync(token).ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                string latestTag = root.TryGetProperty("tag_name", out var tagEl) ? tagEl.GetString() ?? "" : "";
-                string cleanTag = latestTag.TrimStart('v', 'V').Trim();
-                string notes = root.TryGetProperty("body", out var bodyEl) ? bodyEl.GetString() ?? "" : "";
-
-                if (!Version.TryParse(cleanTag, out Version? parsedLatest) || parsedLatest == null)
-                    return new UpdateCheckResult(false, currentVer.ToString(), latestTag, "", null, null, null, $"Failed to parse GitHub release version tag ('{latestTag}').", IsError: true);
-
-                var latestVer = NormalizeVersion3(parsedLatest);
-                if (latestVer <= currentVer)
+                HttpResponseMessage? response = null;
+                try
                 {
-                    string upToDate = $"You are already running the latest version (v{currentVer}).";
-                    Emit($"[UPDATER] {upToDate}");
-                    return new UpdateCheckResult(false, currentVer.ToString(), latestVer.ToString(), notes, null, null, null, upToDate, IsError: false, IsCancelled: false);
+                    response = await UpdateHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                }
+                catch (HttpRequestException ex)
+                {
+                    WriteDiagnosticLog("Updater", $"GitHub API request error: {ex.Message}");
                 }
 
-                string? downloadUrl = null;
-                string? assetNameFound = null;
-                string? checksumUrl = null;
-
-                if (root.TryGetProperty("assets", out var assets))
+                if (response == null || !response.IsSuccessStatusCode)
                 {
-                    foreach (var asset in assets.EnumerateArray())
-                    {
-                        string assetName = asset.TryGetProperty("name", out var nEl) ? nEl.GetString() ?? "" : "";
-                        string? url = asset.TryGetProperty("browser_download_url", out var uEl) ? uEl.GetString() : null;
+                    int statusCode = response != null ? (int)response.StatusCode : 0;
+                    response?.Dispose();
+                    WriteDiagnosticLog("Updater", $"GitHub API returned HTTP {statusCode}; trying web fallback...");
 
-                        if (downloadUrl == null && assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    var webRes = await CheckForUpdateViaWebFallbackAsync(githubOwner, repoName, currentVer, ct).ConfigureAwait(false);
+                    if (webRes != null)
+                        return webRes;
+
+                    string errHint = statusCode == 403 || statusCode == 429
+                        ? "GitHub API rate limit reached (HTTP 403). Please try again shortly or switch VPN/IP."
+                        : statusCode > 0
+                            ? $"Could not check updates (GitHub HTTP {statusCode})."
+                            : "Unable to reach GitHub. Please check your internet connection or proxy/VPN.";
+                    return new UpdateCheckResult(false, currentVer.ToString(), currentVer.ToString(), "", null, null, null, errHint, IsError: true);
+                }
+
+                using (response)
+                {
+                    if (!IsTrustedGitHubUri(response.RequestMessage?.RequestUri))
+                        return new UpdateCheckResult(false, currentVer.ToString(), currentVer.ToString(), "", null, null, null, "Blocked: GitHub API redirected to an untrusted host.", IsError: true);
+
+                    string json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+
+                    string latestTag = root.TryGetProperty("tag_name", out var tagEl) ? tagEl.GetString() ?? "" : "";
+                    string notes = root.TryGetProperty("body", out var bodyEl) ? bodyEl.GetString() ?? "" : "";
+
+                    if (!TryParseReleaseTagVersion(latestTag, out var latestVer) || latestVer == null)
+                        return new UpdateCheckResult(false, currentVer.ToString(), latestTag, "", null, null, null, $"Failed to parse GitHub release version tag ('{latestTag}').", IsError: true);
+
+                    WriteDiagnosticLog("Updater", $"API latest tag={latestTag}, parsed={latestVer}, local={currentVer}");
+
+                    if (latestVer <= currentVer)
+                    {
+                        string upToDate = $"You are already running the latest version (v{currentVer}).";
+                        Emit($"[UPDATER] {upToDate}");
+                        return new UpdateCheckResult(false, currentVer.ToString(), latestVer.ToString(), notes, null, null, null, upToDate, IsError: false, IsCancelled: false);
+                    }
+
+                    string? downloadUrl = null;
+                    string? assetNameFound = null;
+                    string? checksumUrl = null;
+
+                    if (root.TryGetProperty("assets", out var assets))
+                    {
+                        foreach (var asset in assets.EnumerateArray())
                         {
-                            downloadUrl = url;
-                            assetNameFound = assetName;
-                        }
-                        else if (checksumUrl == null &&
-                                 (assetName.Equals("checksums.txt", StringComparison.OrdinalIgnoreCase) ||
-                                  assetName.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase)))
-                        {
-                            checksumUrl = url;
+                            string assetName = asset.TryGetProperty("name", out var nEl) ? nEl.GetString() ?? "" : "";
+                            string? url = asset.TryGetProperty("browser_download_url", out var uEl) ? uEl.GetString() : null;
+
+                            if (downloadUrl == null && assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                            {
+                                downloadUrl = url;
+                                assetNameFound = assetName;
+                            }
+                            else if (checksumUrl == null &&
+                                     (assetName.Equals("checksums.txt", StringComparison.OrdinalIgnoreCase) ||
+                                      assetName.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase)))
+                            {
+                                checksumUrl = url;
+                            }
                         }
                     }
+
+                    if (string.IsNullOrWhiteSpace(downloadUrl))
+                        return new UpdateCheckResult(false, currentVer.ToString(), latestVer.ToString(), notes, null, null, null,
+                            $"Version v{latestVer} exists on GitHub, but no .exe installer asset is attached yet.", IsError: true);
+
+                    return new UpdateCheckResult(true, currentVer.ToString(), latestVer.ToString(), notes, downloadUrl, checksumUrl, assetNameFound,
+                        $"New version v{latestVer} is available (current: v{currentVer}).", IsError: false, IsCancelled: false);
                 }
-
-                if (string.IsNullOrWhiteSpace(downloadUrl))
-                    return new UpdateCheckResult(false, currentVer.ToString(), latestVer.ToString(), notes, null, null, null,
-                        $"Version v{latestVer} exists on GitHub, but no .exe installer asset is attached yet.", IsError: true);
-
-                return new UpdateCheckResult(true, currentVer.ToString(), latestVer.ToString(), notes, downloadUrl, checksumUrl, assetNameFound,
-                    $"New version v{latestVer} is available (current: v{currentVer}).", IsError: false, IsCancelled: false);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                WriteDiagnosticLog("Updater", "Update check cancelled by user.");
+                return new UpdateCheckResult(false, fallbackVer, fallbackVer, "", null, null, null, "Update check was cancelled.", IsError: false, IsCancelled: true);
             }
             catch (OperationCanceledException)
             {
-                return new UpdateCheckResult(false, fallbackVer, fallbackVer, "", null, null, null, "Update check was cancelled.", IsError: false, IsCancelled: true);
+                WriteDiagnosticLog("Updater", "Update check timed out after 25s.");
+                return new UpdateCheckResult(false, fallbackVer, fallbackVer, "", null, null, null, "Connection to GitHub timed out (25s). Please check your internet or VPN.", IsError: true, IsCancelled: false);
             }
             catch (Exception ex)
             {
+                WriteDiagnosticLog("Updater", $"Update check exception: {ex.Message}");
                 return new UpdateCheckResult(false, fallbackVer, fallbackVer, "", null, null, null, $"Connection or API error: {ex.Message}", IsError: true, IsCancelled: false);
             }
         }
@@ -174,21 +337,27 @@ namespace AionToolPro.Desktop.Services
 
             string stagedInstallerPath = string.Empty;
 
+            using var dlTimeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, dlTimeoutCts.Token);
+            var ct = linkedCts.Token;
+
             try
             {
                 progress?.Report(new UpdateDownloadProgress(0, 0, -1, 0, "PREPARING"));
-                string lockedDir = await PrepareLockedUpdatesDirectoryAsync(token).ConfigureAwait(false);
+                string lockedDir = await PrepareLockedUpdatesDirectoryAsync(ct).ConfigureAwait(false);
                 stagedInstallerPath = Path.Combine(lockedDir, $"AionToolPro_Update_{update.LatestVersion}_{Guid.NewGuid():N}.exe");
 
                 Emit($"[UPDATER] Downloading v{update.LatestVersion} into ACL-locked staging directory...");
-                using (var dlResp = await SharedHttp.GetAsync(dlUri, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false))
+                WriteDiagnosticLog("Updater", $"Starting download: {dlUri}");
+
+                using (var dlResp = await UpdateHttp.GetAsync(dlUri, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
                 {
                     if (!IsTrustedGitHubUri(dlResp.RequestMessage?.RequestUri))
-                        return new UpdateInstallResult("ERROR", "Blocked update: download redirected to an untrusted host.");
+                        return new UpdateInstallResult("ERROR", $"Blocked update: download redirected to an untrusted host ({dlResp.RequestMessage?.RequestUri?.Host}).");
 
                     dlResp.EnsureSuccessStatusCode();
                     long totalBytes = dlResp.Content.Headers.ContentLength ?? -1;
-                    await using var src = await dlResp.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
+                    await using var src = await dlResp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
                     await using var dst = new FileStream(stagedInstallerPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
 
                     byte[] buffer = new byte[81920];
@@ -198,9 +367,9 @@ namespace AionToolPro.Desktop.Services
                     long lastReportMs = -200;
                     int read;
 
-                    while ((read = await src.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) > 0)
+                    while ((read = await src.ReadAsync(buffer.AsMemory(), ct).ConfigureAwait(false)) > 0)
                     {
-                        await dst.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
+                        await dst.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                         readTotal += read;
 
                         int pct = totalBytes > 0 ? (int)Math.Clamp(readTotal * 100L / totalBytes, 0, 100) : 0;
@@ -214,37 +383,42 @@ namespace AionToolPro.Desktop.Services
                         }
                     }
 
+                    await dst.FlushAsync(ct).ConfigureAwait(false);
+                    if (totalBytes > 0 && readTotal < totalBytes)
+                    {
+                        try { File.Delete(stagedInstallerPath); } catch { }
+                        return new UpdateInstallResult("ERROR", $"Download ended prematurely ({readTotal:N0} / {totalBytes:N0} bytes). Please retry.");
+                    }
+
                     progress?.Report(new UpdateDownloadProgress(100, readTotal, totalBytes > 0 ? totalBytes : readTotal, 0, "VERIFYING"));
                 }
 
-                // Verify Windows MZ PE header
                 byte[] magic = new byte[2];
                 await using (var fs = File.OpenRead(stagedInstallerPath))
                 {
-                    if (fs.Length < 1024 || await fs.ReadAsync(magic.AsMemory(0, 2), token).ConfigureAwait(false) < 2 || magic[0] != 0x4D || magic[1] != 0x5A)
+                    if (fs.Length < 1024 || await fs.ReadAsync(magic.AsMemory(0, 2), ct).ConfigureAwait(false) < 2 || magic[0] != 0x4D || magic[1] != 0x5A)
                     {
                         try { File.Delete(stagedInstallerPath); } catch { }
                         return new UpdateInstallResult("ERROR", "Security Error: Downloaded file is not a valid Windows PE executable (missing MZ header).");
                     }
                 }
 
-                // Verify SHA-256 checksum against checksums.txt if attached to release
                 if (!string.IsNullOrWhiteSpace(update.ChecksumUrl) && IsTrustedGitHubUrl(update.ChecksumUrl, out var csUri) && csUri != null)
                 {
                     Emit("[UPDATER] Verifying SHA-256 integrity checksum...");
-                    using var csResp = await SharedHttp.GetAsync(csUri, token).ConfigureAwait(false);
+                    using var csResp = await UpdateHttp.GetAsync(csUri, ct).ConfigureAwait(false);
                     if (!IsTrustedGitHubUri(csResp.RequestMessage?.RequestUri))
                     {
                         try { File.Delete(stagedInstallerPath); } catch { }
                         return new UpdateInstallResult("ERROR", "Blocked update: checksum URL redirected to an untrusted host.");
                     }
                     csResp.EnsureSuccessStatusCode();
-                    string checksumText = await csResp.Content.ReadAsStringAsync(token).ConfigureAwait(false);
+                    string checksumText = await csResp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
                     string actualHash;
                     await using (var fs = File.OpenRead(stagedInstallerPath))
                     {
-                        byte[] hashBytes = await SHA256.HashDataAsync(fs, token).ConfigureAwait(false);
+                        byte[] hashBytes = await SHA256.HashDataAsync(fs, ct).ConfigureAwait(false);
                         actualHash = Convert.ToHexString(hashBytes);
                     }
 
@@ -254,9 +428,11 @@ namespace AionToolPro.Desktop.Services
                         try { File.Delete(stagedInstallerPath); } catch { }
                         string mismatch = $"Security Error: SHA-256 mismatch! Expected {expectedHash[..12]}..., got {actualHash[..12]}.... Update aborted.";
                         Emit($"[UPDATER ERR] {mismatch}");
+                        WriteDiagnosticLog("Updater", mismatch);
                         return new UpdateInstallResult("ERROR", mismatch);
                     }
                     Emit("[UPDATER] PE header and SHA-256 checksum verified OK.");
+                    WriteDiagnosticLog("Updater", $"SHA-256 verified OK: {actualHash}");
                 }
 
                 progress?.Report(new UpdateDownloadProgress(100, 0, 0, 0, "INSTALLING"));
@@ -279,18 +455,27 @@ namespace AionToolPro.Desktop.Services
 
                 return new UpdateInstallResult("READY_TO_UPDATE", "Launching silent installer...");
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
                 if (!string.IsNullOrEmpty(stagedInstallerPath))
                     try { if (File.Exists(stagedInstallerPath)) File.Delete(stagedInstallerPath); } catch { }
                 Emit("[UPDATER] Update download cancelled by user; temporary installer removed.");
+                WriteDiagnosticLog("Updater", "Download cancelled by user.");
                 return new UpdateInstallResult("CANCELLED", "Update download was cancelled cleanly and temporary files were removed.");
+            }
+            catch (OperationCanceledException)
+            {
+                if (!string.IsNullOrEmpty(stagedInstallerPath))
+                    try { if (File.Exists(stagedInstallerPath)) File.Delete(stagedInstallerPath); } catch { }
+                WriteDiagnosticLog("Updater", "Download timed out (15 min limit).");
+                return new UpdateInstallResult("ERROR", "Download timed out after 15 minutes. Please check your connection and retry.");
             }
             catch (Exception ex)
             {
                 if (!string.IsNullOrEmpty(stagedInstallerPath))
                     try { if (File.Exists(stagedInstallerPath)) File.Delete(stagedInstallerPath); } catch { }
                 Emit($"[UPDATER ERR] {ex.Message}");
+                WriteDiagnosticLog("Updater", $"Download exception: {ex.Message}");
                 return new UpdateInstallResult("ERROR", $"Update failed: {ex.Message}");
             }
         }

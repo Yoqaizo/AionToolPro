@@ -34,6 +34,7 @@ namespace AionToolPro.Desktop.Models
         public string AdminState { get; init; } = "Enabled";
         public string ConnectionState { get; init; } = "Connected";
         public AdaptorHealthState HealthState { get; init; } = AdaptorHealthState.ConnectedGreen;
+        public bool IsActiveInternetRoute { get; init; }
 
         public string StatusColorHex => HealthState switch
         {
@@ -79,6 +80,8 @@ namespace AionToolPro.Desktop.Models
             _ => "#38BDF8"
         };
 
+        public bool HasDoh => !string.IsNullOrWhiteSpace(DohTemplateUrl);
+
         public override string ToString() => $"{Name}  —  {PrimaryIp} , {SecondaryIp}";
     }
 
@@ -95,7 +98,8 @@ namespace AionToolPro.Desktop.Models
         string InputHex = "#0D111A",
         string BorderHex = "#263044",
         bool IsLightSurface = false,
-        bool PreferGlassMode = false)
+        bool PreferGlassMode = false,
+        bool IsCustom = false)
     {
         public override string ToString() => $"{Name} — {Subtitle}";
     }
@@ -188,13 +192,17 @@ namespace AionToolPro.Desktop.Models
         bool IsDarkMode = true,
         string LanguageCode = "en",
         int SurfacePaletteId = 0,
-        bool MinimizeToTray = false,
+        bool MinimizeToTray = true,
         string GlobalPingTarget = "1.1.1.1",
         string IntranetPingTarget = "www.arvancloud.ir",
         bool GlassMode = false,
         int TransparencyPercent = 100,
         double BrightnessLevel = 1.0,
-        double ContrastLevel = 1.0);
+        double ContrastLevel = 1.0,
+        string CustomAccentHex = "#5865F2",
+        string CustomSecondaryHex = "#38BDF8",
+        bool EnableDiagnosticLogs = false,
+        bool EnableWindowsDoh = false);
 
     public sealed record CustomDnsProfile(
         string Name,
@@ -232,6 +240,7 @@ namespace AionToolPro.Desktop.Models
     public sealed record AdapterTelemetrySnapshot(
         string InterfaceName,
         bool Found,
+        bool IsUp,
         string OperationalStatus,
         long BytesReceived,
         long BytesSent,
@@ -243,7 +252,8 @@ namespace AionToolPro.Desktop.Models
         long OutgoingPacketsDiscarded,
         List<string> DnsServers,
         string Ipv4Address,
-        string GatewayIp);
+        string GatewayIp,
+        string LinkSpeedLabel);
 
     /// <summary>
     /// Accurate sliding-window telemetry tracker:
@@ -453,13 +463,13 @@ namespace AionToolPro.Desktop.Models
             new(12, "ControlD",      "76.76.2.0",      "76.76.10.0",      DnsGroupColor.BlueGeneral,      "Unfiltered modern anycast resolver", "https://freedns.controld.com/p0"),
             new(13, "Mullvad DNS",   "194.242.2.2",    "194.242.2.3",     DnsGroupColor.BlueGeneral,      "Privacy-first non-logging resolver", "https://dns.mullvad.net/dns-query"),
             new(14, "Yandex",        "77.88.8.8",      "77.88.8.1",       DnsGroupColor.BlueGeneral,      "Fast Eurasia recursive DNS"),
-            new(15, "AliDNS",        "223.5.5.5",      "223.6.6.6",       DnsGroupColor.BlueGeneral,      "Alibaba Cloud global resolution"),
+            new(15, "AliDNS",        "223.5.5.5",      "223.6.6.6",       DnsGroupColor.BlueGeneral,      "Alibaba Cloud global resolution", "https://dns.alidns.com/dns-query"),
             new(16, "114DNS",        "114.114.114.114","114.114.115.115", DnsGroupColor.BlueGeneral,      "Reliable Asian & Pacific routing"),
 
             // Group 3: Security, Privacy & Ad-Blocking DNS (17..22)
             new(17, "Quad9",         "9.9.9.9",        "149.112.112.112", DnsGroupColor.YellowSecurity,   "Swiss malware & threat blocker", "https://dns.quad9.net/dns-query", "2620:fe::fe", "2620:fe::9"),
             new(18, "AdGuard",       "94.140.14.14",   "94.140.15.15",    DnsGroupColor.YellowSecurity,   "Network-level ad & tracker blocker", "https://dns.adguard-dns.com/dns-query", "2a10:50c0::ad1:ff", "2a10:50c0::ad2:ff"),
-            new(19, "CleanBrowsing", "185.228.168.9",  "185.228.169.9",   DnsGroupColor.YellowSecurity,   "Security filter blocking threats"),
+            new(19, "CleanBrowsing", "185.228.168.9",  "185.228.169.9",   DnsGroupColor.YellowSecurity,   "Security filter blocking threats", "https://doh.cleanbrowsing.org/doh/security-filter/"),
             new(20, "dns0.eu",       "193.110.81.0",   "185.253.5.0",     DnsGroupColor.YellowSecurity,   "European privacy & security DNS", "https://dns0.eu/"),
             new(21, "Alternate DNS", "76.76.19.19",    "76.223.122.150",  DnsGroupColor.YellowSecurity,   "Ad-blocking & tracker filtering"),
             new(22, "Comodo Secure", "8.26.56.26",     "8.20.247.20",     DnsGroupColor.YellowSecurity,   "Cloud malware & web protection")
@@ -478,7 +488,8 @@ namespace AionToolPro.Desktop.Models
             new(9,  "Titanium Stealth",     "#E2E8F0", "#94A3B8", "Minimalist Monochrome Slate",        "#090B0E", "#101318", "#171B22", "#20252E", "#0C0E12", "#2B323D"),
             new(10, "Daylight Clean Light", "#4F46E5", "#0284C7", "High-Contrast Light Surface",        "#F1F5F9", "#FFFFFF", "#FFFFFF", "#F8FAFC", "#F8FAFC", "#CBD5E1", IsLightSurface: true),
             new(11, "Frost Cyber Glass",    "#38BDF8", "#A855F7", "Translucent Frosted Glass & Neon",   "#0A101E", "#10182B", "#16213A", "#1F2E4F", "#0D1526", "#2E446E", PreferGlassMode: true),
-            new(12, "Aurora Prism Glass",   "#2DD4BF", "#818CF8", "Luminous Teal-Indigo Acrylic Glass", "#071318", "#0C1D24", "#122933", "#193845", "#091820", "#265063", PreferGlassMode: true)
+            new(12, "Aurora Prism Glass",   "#2DD4BF", "#818CF8", "Luminous Teal-Indigo Acrylic Glass", "#071318", "#0C1D24", "#122933", "#193845", "#091820", "#265063", PreferGlassMode: true),
+            new(13, "Custom Color",         "#5865F2", "#38BDF8", "Full Custom Spectrum Accent Colors", "#0B0E14", "#11151F", "#171C28", "#1F2637", "#0D111A", "#263044", IsCustom: true)
         };
 
         public static IReadOnlyList<AppSurfacePalette> SurfacePalettes { get; } = new List<AppSurfacePalette>

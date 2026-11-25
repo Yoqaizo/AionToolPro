@@ -489,7 +489,154 @@ namespace AionToolPro.Desktop.Services
             return new OperationResult(false, "DNS backup did not contain a valid IPv4 DNS address.");
         }
 
-        // ==================== DoH ====================
+        // ==================== WINDOWS 11 NATIVE DNS-OVER-HTTPS (DoH) ENGINE ====================
+        private static string? GetInterfaceGuidByName(string interfaceName)
+        {
+            try
+            {
+                var nic = NetworkInterface.GetAllNetworkInterfaces()
+                    .FirstOrDefault(n => n.Name.Equals(interfaceName, StringComparison.OrdinalIgnoreCase));
+                return nic?.Id;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void ApplyPerInterfaceDohRegistry(string interfaceName, DnsProviderModel provider)
+        {
+            string? nicGuid = GetInterfaceGuidByName(interfaceName);
+            if (string.IsNullOrWhiteSpace(nicGuid) || string.IsNullOrWhiteSpace(provider.DohTemplateUrl))
+                return;
+
+            try
+            {
+                string basePath = $@"SYSTEM\CurrentControlSet\Services\Dnscache\InterfaceSpecificParameters\{nicGuid}\DohInterfaceSettings";
+                void WriteServerEntry(string subFolder, string? ip)
+                {
+                    if (string.IsNullOrWhiteSpace(ip) || !IPAddress.TryParse(ip, out _)) return;
+                    using var key = Registry.LocalMachine.CreateSubKey($@"{basePath}\{subFolder}\{ip}", writable: true);
+                    if (key == null) return;
+                    // DohFlags = 1 => On (automatic template with UDP fallback) in Windows 11 Settings
+                    key.SetValue("DohFlags", 1L, RegistryValueKind.QWord);
+                    key.SetValue("DohTemplate", provider.DohTemplateUrl, RegistryValueKind.String);
+                }
+
+                WriteServerEntry("Doh", provider.PrimaryIp);
+                if (!string.IsNullOrWhiteSpace(provider.SecondaryIp) && !provider.SecondaryIp.Equals(provider.PrimaryIp, StringComparison.OrdinalIgnoreCase))
+                    WriteServerEntry("Doh", provider.SecondaryIp);
+
+                WriteServerEntry("Doh6", provider.PrimaryIpv6);
+                if (!string.IsNullOrWhiteSpace(provider.SecondaryIpv6) && !provider.SecondaryIpv6.Equals(provider.PrimaryIpv6, StringComparison.OrdinalIgnoreCase))
+                    WriteServerEntry("Doh6", provider.SecondaryIpv6);
+
+                WriteDiagnosticLog("DoH", $"Applied per-interface Dnscache DoH registry keys for {provider.Name} on {interfaceName} ({nicGuid}).");
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog("DoH", $"Per-interface DoH registry warning on {interfaceName}: {ex.Message}");
+            }
+        }
+
+        public void ClearPerInterfaceDohRegistry(string interfaceName)
+        {
+            string? nicGuid = GetInterfaceGuidByName(interfaceName);
+            if (string.IsNullOrWhiteSpace(nicGuid)) return;
+
+            try
+            {
+                string basePath = $@"SYSTEM\CurrentControlSet\Services\Dnscache\InterfaceSpecificParameters\{nicGuid}";
+                using var parent = Registry.LocalMachine.OpenSubKey(basePath, writable: true);
+                parent?.DeleteSubKeyTree("DohInterfaceSettings", throwOnMissingSubKey: false);
+                WriteDiagnosticLog("DoH", $"Cleared per-interface DohInterfaceSettings on {interfaceName} ({nicGuid}).");
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnosticLog("DoH", $"Clear per-interface DoH warning: {ex.Message}");
+            }
+        }
+
+        private async Task<bool> EnsureGlobalDohRuleAsync(string serverIp, string dohTemplate, CancellationToken token)
+        {
+            if (string.IsNullOrWhiteSpace(serverIp) || !IPAddress.TryParse(serverIp, out _))
+                return false;
+
+            var rAdd = await ExecAsync("netsh", new[]
+            {
+                "dns", "add", "encryption",
+                $"server={serverIp}",
+                $"dohtemplate={dohTemplate}",
+                "autoupgrade=yes",
+                "udpfallback=yes"
+            }, token, silent: true).ConfigureAwait(false);
+
+            if (rAdd.IsSuccess)
+            {
+                WriteDiagnosticLog("DoH", $"Added netsh DoH rule for {serverIp} -> {dohTemplate}");
+                return true;
+            }
+
+            // Well-known Windows 11 servers (1.1.1.1, 8.8.8.8, 9.9.9.9) already exist in the built-in DoH table
+            var rShow = await ExecAsync("netsh", new[]
+            {
+                "dns", "show", "encryption", $"server={serverIp}"
+            }, token, silent: true).ConfigureAwait(false);
+
+            if (rShow.IsSuccess && !string.IsNullOrWhiteSpace(rShow.StandardOutput) &&
+                rShow.StandardOutput.Contains("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                WriteDiagnosticLog("DoH", $"Existing Windows DoH rule verified for {serverIp}.");
+                return true;
+            }
+
+            await ExecAsync("netsh", new[] { "dns", "delete", "encryption", $"server={serverIp}" }, token, silent: true).ConfigureAwait(false);
+            var rRetry = await ExecAsync("netsh", new[]
+            {
+                "dns", "add", "encryption",
+                $"server={serverIp}",
+                $"dohtemplate={dohTemplate}",
+                "autoupgrade=yes",
+                "udpfallback=yes"
+            }, token, silent: true).ConfigureAwait(false);
+
+            WriteDiagnosticLog("DoH", $"Retry netsh DoH add for {serverIp}: exit={rRetry.ExitCode}");
+            return rRetry.IsSuccess;
+        }
+
+        public async Task<OperationResult> ApplyProviderDnsAsync(
+            string interfaceName,
+            DnsProviderModel provider,
+            bool useWindowsDoh,
+            CancellationToken token = default)
+        {
+            interfaceName = ValidateInterfaceName(interfaceName);
+
+            if (useWindowsDoh && provider.HasDoh)
+            {
+                if (Environment.OSVersion.Version.Build >= 22000)
+                {
+                    return await EnableDnsOverHttpsAsync(interfaceName, provider, token).ConfigureAwait(false);
+                }
+
+                Emit($"[DoH INFO] Native Windows DoH requires Windows 11 (Build 22000+). Applying {provider.Name} via standard DNS.");
+                WriteDiagnosticLog("DoH", $"Skipped DoH on Windows Build {Environment.OSVersion.Version.Build}; applied standard DNS.");
+            }
+            else
+            {
+                ClearPerInterfaceDohRegistry(interfaceName);
+            }
+
+            return await ApplyDnsAsync(
+                interfaceName,
+                provider.PrimaryIp,
+                provider.SecondaryIp,
+                provider.Name,
+                provider.PrimaryIpv6,
+                provider.SecondaryIpv6,
+                token).ConfigureAwait(false);
+        }
+
         public async Task<OperationResult> EnableDnsOverHttpsAsync(string interfaceName, DnsProviderModel provider, CancellationToken token = default)
         {
             interfaceName = ValidateInterfaceName(interfaceName);
@@ -499,36 +646,34 @@ namespace AionToolPro.Desktop.Services
 
             if (Environment.OSVersion.Version.Build < 22000)
             {
-                string msg = $"Encrypted DoH via netsh requires Windows 11 (Build 22000+). Detected build: {Environment.OSVersion.Version.Build}.";
+                string msg = $"Encrypted DoH via Windows requires Windows 11 (Build 22000+). Detected build: {Environment.OSVersion.Version.Build}.";
                 Emit($"[DoH ERR] {msg}");
                 return new OperationResult(false, msg, -1);
             }
 
-            var r1 = await ExecAsync("netsh", new[]
-            {
-                "dns", "add", "encryption",
-                $"server={provider.PrimaryIp}",
-                $"dohtemplate={provider.DohTemplateUrl}",
-                "autoupgrade=yes",
-                "udpfallback=yes"
-            }, token).ConfigureAwait(false);
+            Emit($"[DoH] Configuring Windows 11 Encrypted DNS-over-HTTPS for {provider.Name} ({provider.DohTemplateUrl})...");
 
-            var r2 = await ExecAsync("netsh", new[]
+            bool ok1 = await EnsureGlobalDohRuleAsync(provider.PrimaryIp, provider.DohTemplateUrl, token).ConfigureAwait(false);
+            bool ok2 = true;
+            if (!string.IsNullOrWhiteSpace(provider.SecondaryIp) && !provider.SecondaryIp.Equals(provider.PrimaryIp, StringComparison.OrdinalIgnoreCase))
             {
-                "dns", "add", "encryption",
-                $"server={provider.SecondaryIp}",
-                $"dohtemplate={provider.DohTemplateUrl}",
-                "autoupgrade=yes",
-                "udpfallback=yes"
-            }, token).ConfigureAwait(false);
-
-            if (!r1.IsSuccess && !r2.IsSuccess)
-            {
-                WriteActionLog(interfaceName, $"FAILED DoH {provider.Name} (exit={r1.ExitCode})");
-                return new OperationResult(false, $"Failed to register DoH encryption rule for {provider.Name}: {r1.StandardOutput}", r1.ExitCode);
+                ok2 = await EnsureGlobalDohRuleAsync(provider.SecondaryIp, provider.DohTemplateUrl, token).ConfigureAwait(false);
             }
 
-            TrackManagedDohServers(new[] { provider.PrimaryIp, provider.SecondaryIp });
+            if (!string.IsNullOrWhiteSpace(provider.PrimaryIpv6))
+                await EnsureGlobalDohRuleAsync(provider.PrimaryIpv6, provider.DohTemplateUrl, token).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(provider.SecondaryIpv6))
+                await EnsureGlobalDohRuleAsync(provider.SecondaryIpv6, provider.DohTemplateUrl, token).ConfigureAwait(false);
+
+            if (!ok1 && !ok2)
+            {
+                WriteActionLog(interfaceName, $"FAILED DoH {provider.Name}");
+                return new OperationResult(false, $"Failed to register Windows DoH encryption rule for {provider.Name}.", -1);
+            }
+
+            var tracked = new List<string> { provider.PrimaryIp };
+            if (!string.IsNullOrWhiteSpace(provider.SecondaryIp)) tracked.Add(provider.SecondaryIp);
+            TrackManagedDohServers(tracked);
 
             var applyRes = await ApplyDnsAsync(
                 interfaceName,
@@ -539,7 +684,15 @@ namespace AionToolPro.Desktop.Services
                 provider.SecondaryIpv6,
                 token).ConfigureAwait(false);
 
-            WriteActionLog(interfaceName, $"{(applyRes.Success ? "OK" : "FAILED")} DoH enabled {provider.Name} (udpfallback=yes)");
+            if (applyRes.Success)
+            {
+                ApplyPerInterfaceDohRegistry(interfaceName, provider);
+                await ExecAsync("ipconfig", new[] { "/flushdns" }, token, silent: true).ConfigureAwait(false);
+                ClearDnsResolveCache();
+                Emit($"[DoH] Encrypted DNS-over-HTTPS is ACTIVE for {provider.Name} on '{interfaceName}' (autoupgrade=yes, udpfallback=yes).");
+            }
+
+            WriteActionLog(interfaceName, $"{(applyRes.Success ? "OK" : "FAILED")} DoH enabled {provider.Name}");
             return applyRes;
         }
 
@@ -577,18 +730,14 @@ namespace AionToolPro.Desktop.Services
             if (Environment.OSVersion.Version.Build < 22000)
                 return new OperationResult(false, "Native DoH rules require Windows 11 (Build 22000+).");
 
+            ClearPerInterfaceDohRegistry(interfaceName);
+
             HashSet<string> managedServers;
             lock (_ioLock)
             {
                 managedServers = File.Exists(DohStateFilePath)
                     ? JsonSerializer.Deserialize<HashSet<string>>(File.ReadAllText(DohStateFilePath)) ?? new HashSet<string>()
                     : new HashSet<string>();
-            }
-
-            if (managedServers.Count == 0)
-            {
-                Emit("[DoH] No DoH rules created by AionToolPro were found. Your manual/corporate DoH rules were left untouched.");
-                return new OperationResult(true, "No AionToolPro-managed DoH rules to remove.");
             }
 
             int removed = 0;
@@ -603,9 +752,15 @@ namespace AionToolPro.Desktop.Services
                 try { if (File.Exists(DohStateFilePath)) File.Delete(DohStateFilePath); } catch { }
             }
 
-            Emit($"[DoH] Removed {removed} DoH encryption rule(s) previously added by AionToolPro.");
-            WriteActionLog(interfaceName, $"OK Removed {removed} managed DoH rule(s)");
-            return new OperationResult(true, $"Removed {removed} managed DoH rule(s).");
+            await ExecAsync("ipconfig", new[] { "/flushdns" }, token, silent: true).ConfigureAwait(false);
+            ClearDnsResolveCache();
+
+            string msg = removed > 0
+                ? $"Disabled DoH and removed {removed} managed DoH encryption rule(s)."
+                : "Disabled interface DoH encryption (standard DNS restored).";
+            Emit($"[DoH] {msg}");
+            WriteActionLog(interfaceName, $"OK {msg}");
+            return new OperationResult(true, msg);
         }
     }
 }

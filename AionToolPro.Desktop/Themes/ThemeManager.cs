@@ -17,7 +17,9 @@ namespace AionToolPro.Desktop.Themes
             int transparencyPercent = 100,
             double brightness = 1.0,
             double contrast = 1.0,
-            bool animate = true)
+            bool animate = true,
+            string? customAccentHex = null,
+            string? customSecondaryHex = null)
         {
             var res = Application.Current.Resources;
             var surface = AioCatalog.SurfacePalettes.FirstOrDefault(s => s.Id == surfacePaletteId) ?? AioCatalog.SurfacePalettes[0];
@@ -71,8 +73,11 @@ namespace AionToolPro.Desktop.Themes
             Color primaryText    = CalibrateColor(ParseColor(useLight ? "#0F172A" : "#F8FAFC"), 1.0, textContrast);
             Color mutedText      = CalibrateColor(ParseColor(useLight ? "#475569" : "#9AA8BE"), Math.Clamp(brightness, 0.96, 1.15), Math.Clamp(textContrast, 0.95, 1.15));
 
-            Color accentColor    = CalibrateColor(ParseColor(theme.AccentHex), Math.Clamp(brightness, 0.85, 1.20), Math.Clamp(contrast, 0.85, 1.25));
-            Color secondaryColor = CalibrateColor(ParseColor(theme.SecondaryHex), Math.Clamp(brightness, 0.85, 1.20), Math.Clamp(contrast, 0.85, 1.25));
+            string effectiveAccentHex = theme.IsCustom && !string.IsNullOrWhiteSpace(customAccentHex) ? customAccentHex : theme.AccentHex;
+            string effectiveSecondaryHex = theme.IsCustom && !string.IsNullOrWhiteSpace(customSecondaryHex) ? customSecondaryHex : theme.SecondaryHex;
+
+            Color accentColor    = CalibrateColor(ParseColor(effectiveAccentHex), Math.Clamp(brightness, 0.85, 1.20), Math.Clamp(contrast, 0.85, 1.25));
+            Color secondaryColor = CalibrateColor(ParseColor(effectiveSecondaryHex), Math.Clamp(brightness, 0.85, 1.20), Math.Clamp(contrast, 0.85, 1.25));
 
             // Real Frosted Glass Alpha: keeps nested layers light so DWM Acrylic blur shines unmistakably through!
             if (useFrostedAlpha)
