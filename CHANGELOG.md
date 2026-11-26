@@ -4,6 +4,33 @@ All notable changes to **AionToolPro** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-11-26
+
+### Hardened Smart Agent, Report Accuracy, DoH Precision & Performance
+- **Strict Smart Agent Bypass Guard & Full HTTPS + HTTP (Port 80) Support:**
+  - Enforced `summary.FoundWorkingDns` so geo-restricted (`HTTP 403/451`) DNS servers are never auto-applied as false successes.
+  - Enabled strict TLS certificate validation (`SslPolicyErrors.None`) to catch and reject MitM/fake-certificate ISP block pages (`✗ TLS Cert Invalid / MitM`), plus automatic `GET /` fallback when servers return `HTTP 405` on `HEAD /`.
+  - Added full **HTTP (Port 80)** site support (automatic fallback when Port 443 is unavailable, or direct priority when entering `http://...`) with ISP block-page signature filtering (`10.10.34.x`, `peyvandha.ir`, `internet.ir`).
+  - Bound Agent UDP/53 queries & TCP probes to the selected adapter (testing up to 2 resolved IPs per DNS), added clean `OperationCanceledException` (`WasCancelled`) handling when clicking Stop, color-coded the `Bypass Status` column (Green/Amber/Red), and wired `Enter` key submission in the target input box.
+  - Upgraded **Auto-Failover Guard** to check live reachability of the actual target site (not just `1.1.1.1`) and skip pointless scans whenever the network adapter is physically disconnected.
+- **Full-Session Graphical DNS Report (`.txt`) Fixes:** Widened the Unicode box layout from 68 to 86 columns so `Min / Avg / Max / Jitter / Loss %` never truncate, and upgraded `DnsSessionTracker` with true cumulative full-session ping statistics across Global, Intranet, and Router channels (not just the last 40 samples).
+- **Sinkhole-Free DNS Benchmark & Precise Windows 11 DoH:** Rejected ISP sinkhole IPs inside `BenchmarkAllDnsAsync` so hijacked resolvers can never win "Fastest DNS". Reordered Windows 11 `DohInterfaceSettings` registry writes ahead of `netsh set dnsservers` and added explicit `DohFlags = 0` deactivation when toggling DoH OFF.
+- **Final Reliability Polish:** Cleared stale per-interface DoH registry entries during `ResetDnsToDhcpAsync`, routed `Apply Fastest DNS` through `ApplyProviderDnsAsync` (honoring Windows DoH), isolated per-provider exceptions inside parallel Agent scans while preserving clean cancellation, forced DWM backdrop refresh after Settings Import, and reset per-channel cumulative report counters when switching ping targets.
+- **~70% Fewer OS NIC Enumerations & One-Time Tray Balloon:** Introduced shared `AdapterProbeContext` across parallel pings (reducing `GetAllNetworkInterfaces()` calls from ~6 per tick to 1) and added a one-time localized Win32 System Tray balloon tip (`NIF_INFO`) when hiding to Tray.
+
+## [0.9.3] - 2026-11-26
+
+### Added & Replaced
+- **Smart Anti-Sanction DNS Agent (Replaces Game Mode):** Completely removed Game Booster and replaced it with a live **Smart Agent** (`🤖 Smart Agent` toggle + expandable live Dashboard panel):
+  - **Parallel Multi-DNS Anti-Sanction Scanner (`AioNetworkService.Agent.cs`):** Sends native RFC 1035 UDP/53 queries (with full label-compression A-record parsing) to all DNS servers simultaneously for any website or URL entered by the user (plus 8 one-click quick chips: Discord, Steam, Riot, Epic, ChatGPT, Spotify, EA, GitHub).
+  - **ISP Sinkhole Detection & Real TLS SNI + HTTP Bypass Verification:** Automatically filters out ISP censorship sinkhole IPs (`10.10.34.x`, `0.0.0.0`, `127.0.0.1`), verifies real TCP + TLS 1.2/1.3 SNI handshake & HTTP status (`200/3xx` vs `403/451` geo-blocks) directly against each resolved IP, ranks all working resolvers, and automatically applies the best working DNS to Windows (honoring Windows DoH).
+  - **Live Auto-Failover Guard:** While Agent is active, continuously monitors live ping and packet loss and automatically triggers a parallel re-scan and switch if packet loss spikes (`>=25%`) or 3 consecutive drops occur.
+- **Graphical DNS Session Telemetry Report (`.txt`):** Added a live `DnsSessionTracker` and **📊 DNS Report** button on the Dashboard that tracks exact Rx/Tx downloaded data during the active DNS session, peak speeds, Global/Intranet/Router ping Min/Avg/Max/Jitter/Loss, latency sparkline (`▁▂▃▄▅▆▇█`), Agent history, and overall Network Quality Grade (`S+` to `D`), exporting a cleanly framed Unicode box-drawing `.txt` report (UTF-8 BOM for crisp Notepad rendering).
+
+### Removed
+- Removed `iran.ir` from Intranet ping targets, tooltips, and documentation (retaining `www.arvancloud.ir`, `www.salatingames.ir`, and `parsvds.com`).
+- Removed Game Booster / Game Mode (`OptimizeForGamingAsync`, `RestoreNormalModeAsync`, `gamebooster_state.json`) cleanly in favor of the Smart Anti-Sanction DNS Agent.
+
 ## [0.9.2] - 2026-11-25
 
 ### Backend, DoH, Custom Color Studio & Updater Reliability

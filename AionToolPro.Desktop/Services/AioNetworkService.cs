@@ -127,7 +127,7 @@ namespace AionToolPro.Desktop.Services
         public static string GetAppVersionString()
         {
             var v = Assembly.GetExecutingAssembly().GetName().Version;
-            if (v == null) return "0.9.2";
+            if (v == null) return "0.9.4";
             return $"{Math.Max(0, v.Major)}.{Math.Max(0, v.Minor)}.{Math.Max(0, v.Build)}";
         }
 
@@ -173,7 +173,6 @@ namespace AionToolPro.Desktop.Services
         public string HostsOriginalBackupPath => Path.Combine(_cfgDir, "hosts.backup.original");
         public string DohStateFilePath => Path.Combine(_cfgDir, "doh_rules.json");
         public string BlockedAppsFilePath => Path.Combine(_cfgDir, "blocked_apps.json");
-        public string GameBoosterStateFilePath => Path.Combine(_cfgDir, "gamebooster_state.json");
         public string HostsPath => _hostsPath;
 
         public bool EnableActionLog { get; set; } = true;
@@ -718,8 +717,54 @@ namespace AionToolPro.Desktop.Services
             }
         }
 
-        public async Task<PingProbeResult> ProbeHostOnAdapterAsync(
+        /// <summary>
+        /// Captures an adapter's live binding context (IsUp, SourceIpv4, GatewayIp, VPN TUN flag)
+        /// in a SINGLE OS NIC enumeration so parallel probes never spam GetAllNetworkInterfaces().
+        /// </summary>
+        public Task<AdapterProbeContext> CaptureAdapterProbeContextAsync(string interfaceName) =>
+            Task.Run(() => CaptureAdapterProbeContext(interfaceName));
+
+        public AdapterProbeContext CaptureAdapterProbeContext(string interfaceName)
+        {
+            if (string.IsNullOrWhiteSpace(interfaceName))
+                return new AdapterProbeContext(string.Empty, true, null, string.Empty, false);
+
+            try
+            {
+                var allNics = NetworkInterface.GetAllNetworkInterfaces();
+                var selectedNic = allNics.FirstOrDefault(n => n.Name.Equals(interfaceName, StringComparison.OrdinalIgnoreCase));
+                if (selectedNic == null || selectedNic.OperationalStatus != OperationalStatus.Up)
+                    return new AdapterProbeContext(interfaceName, false, null, string.Empty, false);
+
+                var sourceIp = GetValidUnicastIpv4(selectedNic);
+                string gwIp = string.Empty;
+                var gw = selectedNic.GetIPProperties().GatewayAddresses
+                    .FirstOrDefault(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.Any.Equals(g.Address));
+                if (gw != null) gwIp = gw.Address.ToString();
+
+                bool allowVpnFallback = !string.IsNullOrEmpty(gwIp) && HasActiveVpnTunAdapter(allNics);
+                return new AdapterProbeContext(selectedNic.Name, true, sourceIp, gwIp, allowVpnFallback);
+            }
+            catch
+            {
+                return new AdapterProbeContext(interfaceName, false, null, string.Empty, false);
+            }
+        }
+
+        public Task<PingProbeResult> ProbeHostOnAdapterAsync(
             string interfaceName,
+            string hostOrIp,
+            int timeoutMs = 2000,
+            int[]? fallbackTcpPorts = null,
+            bool allowTcpFallback = false,
+            bool treatTcpRefusedAsAlive = false)
+        {
+            var ctx = CaptureAdapterProbeContext(interfaceName);
+            return ProbeHostWithContextAsync(ctx, hostOrIp, timeoutMs, fallbackTcpPorts, allowTcpFallback, treatTcpRefusedAsAlive);
+        }
+
+        public async Task<PingProbeResult> ProbeHostWithContextAsync(
+            AdapterProbeContext adapterCtx,
             string hostOrIp,
             int timeoutMs = 2000,
             int[]? fallbackTcpPorts = null,
@@ -729,30 +774,11 @@ namespace AionToolPro.Desktop.Services
             if (string.IsNullOrWhiteSpace(hostOrIp))
                 return new PingProbeResult(null, ProbeTransport.Timeout);
 
-            IPAddress? sourceIp = null;
-            bool allowVpnRouteFallback = false;
+            if (!string.IsNullOrWhiteSpace(adapterCtx.InterfaceName) && (!adapterCtx.IsUp || adapterCtx.SourceIpv4 == null))
+                return new PingProbeResult(null, ProbeTransport.Timeout);
 
-            if (!string.IsNullOrWhiteSpace(interfaceName))
-            {
-                try
-                {
-                    var allNics = NetworkInterface.GetAllNetworkInterfaces();
-                    var selectedNic = allNics.FirstOrDefault(n => n.Name.Equals(interfaceName, StringComparison.OrdinalIgnoreCase));
-
-                    if (selectedNic == null || selectedNic.OperationalStatus != OperationalStatus.Up)
-                        return new PingProbeResult(null, ProbeTransport.Timeout);
-
-                    sourceIp = GetValidUnicastIpv4(selectedNic);
-                    if (sourceIp == null)
-                        return new PingProbeResult(null, ProbeTransport.Timeout);
-
-                    allowVpnRouteFallback = HasIpv4Gateway(selectedNic) && HasActiveVpnTunAdapter(allNics);
-                }
-                catch
-                {
-                    return new PingProbeResult(null, ProbeTransport.Timeout);
-                }
-            }
+            IPAddress? sourceIp = adapterCtx.SourceIpv4;
+            bool allowVpnRouteFallback = adapterCtx.AllowVpnRouteFallback;
 
             var targetIp = await ResolveHostCachedAsync(hostOrIp).ConfigureAwait(false);
             if (targetIp == null)
@@ -886,7 +912,7 @@ namespace AionToolPro.Desktop.Services
         }
 
         // ==================== SETTINGS, EXPORT/IMPORT & ACTION LOG ====================
-        public void SaveSettings(int themeId, string interfaceName, bool isDarkMode, string languageCode, int surfacePaletteId = 0, bool minimizeToTray = true, string globalPingTarget = "1.1.1.1", string intranetPingTarget = "www.arvancloud.ir", bool glassMode = false, int transparencyPercent = 100, double brightnessLevel = 1.0, double contrastLevel = 1.0, string customAccentHex = "#5865F2", string customSecondaryHex = "#38BDF8", bool enableDiagnosticLogs = false, bool enableWindowsDoh = false)
+        public void SaveSettings(int themeId, string interfaceName, bool isDarkMode, string languageCode, int surfacePaletteId = 0, bool minimizeToTray = true, string globalPingTarget = "1.1.1.1", string intranetPingTarget = "www.arvancloud.ir", bool glassMode = false, int transparencyPercent = 100, double brightnessLevel = 1.0, double contrastLevel = 1.0, string customAccentHex = "#5865F2", string customSecondaryHex = "#38BDF8", bool enableDiagnosticLogs = false, bool enableWindowsDoh = false, string agentLastTargetDomain = "discord.com", bool agentAutoFailover = true)
         {
             lock (_ioLock)
             {
@@ -902,7 +928,7 @@ namespace AionToolPro.Desktop.Services
                     Directory.CreateDirectory(_cfgDir);
                     string safeGlobal = ValidateHostOrIp(globalPingTarget) ? globalPingTarget.Trim() : "1.1.1.1";
                     string safeIntranet = ValidateHostOrIp(intranetPingTarget) ? intranetPingTarget.Trim() : "www.arvancloud.ir";
-                    var model = new AppSettingsModel(themeId, interfaceName, EnableActionLog, isDarkMode, languageCode, surfacePaletteId, minimizeToTray, safeGlobal, safeIntranet, glassMode, Math.Clamp(transparencyPercent, 35, 100), Math.Clamp(brightnessLevel, 0.75, 1.30), Math.Clamp(contrastLevel, 0.80, 1.35), string.IsNullOrWhiteSpace(customAccentHex) ? "#5865F2" : customAccentHex, string.IsNullOrWhiteSpace(customSecondaryHex) ? "#38BDF8" : customSecondaryHex, enableDiagnosticLogs, enableWindowsDoh);
+                    var model = new AppSettingsModel(themeId, interfaceName, EnableActionLog, isDarkMode, languageCode, surfacePaletteId, minimizeToTray, safeGlobal, safeIntranet, glassMode, Math.Clamp(transparencyPercent, 35, 100), Math.Clamp(brightnessLevel, 0.75, 1.30), Math.Clamp(contrastLevel, 0.80, 1.35), string.IsNullOrWhiteSpace(customAccentHex) ? "#5865F2" : customAccentHex, string.IsNullOrWhiteSpace(customSecondaryHex) ? "#38BDF8" : customSecondaryHex, enableDiagnosticLogs, enableWindowsDoh, string.IsNullOrWhiteSpace(agentLastTargetDomain) ? "discord.com" : agentLastTargetDomain.Trim(), agentAutoFailover);
                     string tmp = ConfigFilePath + ".tmp";
                     File.WriteAllText(tmp, JsonSerializer.Serialize(model, JsonOpts), new UTF8Encoding(false));
                     if (File.Exists(ConfigFilePath))
@@ -942,7 +968,7 @@ namespace AionToolPro.Desktop.Services
                             else if (k.Equals("dark", StringComparison.OrdinalIgnoreCase)) dark = v != "0";
                             else if (k.Equals("lang", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(v)) lang = v;
                         }
-                        return new AppSettingsModel(theme, iface, log, dark, lang, surface, true, "1.1.1.1", "www.arvancloud.ir", false, 100, 1.0, 1.0, "#5865F2", "#38BDF8", false, false);
+                        return new AppSettingsModel(theme, iface, log, dark, lang, surface, true, "1.1.1.1", "www.arvancloud.ir", false, 100, 1.0, 1.0, "#5865F2", "#38BDF8", false, false, "discord.com", true);
                     }
                 }
                 catch { }

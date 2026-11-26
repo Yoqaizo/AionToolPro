@@ -202,7 +202,9 @@ namespace AionToolPro.Desktop.Models
         string CustomAccentHex = "#5865F2",
         string CustomSecondaryHex = "#38BDF8",
         bool EnableDiagnosticLogs = false,
-        bool EnableWindowsDoh = false);
+        bool EnableWindowsDoh = false,
+        string AgentLastTargetDomain = "discord.com",
+        bool AgentAutoFailover = true);
 
     public sealed record CustomDnsProfile(
         string Name,
@@ -369,6 +371,218 @@ namespace AionToolPro.Desktop.Models
                 _hasJitter = false;
                 _rfcJitter = 0;
             }
+        }
+    }
+
+    public sealed record AdapterProbeContext(
+        string InterfaceName,
+        bool IsUp,
+        IPAddress? SourceIpv4,
+        string GatewayIp,
+        bool AllowVpnRouteFallback);
+
+    public sealed class AgentDnsProbeRow
+    {
+        private static readonly SolidColorBrush FrozenGreen = MakeFrozen("#10B981");
+        private static readonly SolidColorBrush FrozenAmber = MakeFrozen("#F59E0B");
+        private static readonly SolidColorBrush FrozenRed   = MakeFrozen("#F43F5E");
+
+        private static SolidColorBrush MakeFrozen(string hex)
+        {
+            var c = ColorConverter.ConvertFromString(hex) is Color parsed ? parsed : Colors.White;
+            var b = new SolidColorBrush(c);
+            b.Freeze();
+            return b;
+        }
+
+        public string ProviderName { get; init; } = string.Empty;
+        public string PrimaryIp { get; init; } = string.Empty;
+        public string SecondaryIp { get; init; } = string.Empty;
+        public string Category { get; init; } = string.Empty;
+        public string ResolvedIp { get; init; } = "--";
+        public long? DnsLatencyMs { get; init; }
+        public long? ConnectLatencyMs { get; init; }
+        public int? HttpStatusCode { get; init; }
+        public bool IsSinkhole { get; init; }
+        public bool IsBypassSuccess { get; init; }
+        public bool IsGeoRestricted { get; init; }
+        public int RankScore { get; init; }
+        public string StatusText { get; init; } = "Timeout";
+        public DnsProviderModel? ProviderRef { get; init; }
+
+        public string LatencyDisplay => ConnectLatencyMs.HasValue
+            ? $"{ConnectLatencyMs.Value} ms"
+            : (DnsLatencyMs.HasValue ? $"{DnsLatencyMs.Value} ms (DNS)" : "--");
+
+        public SolidColorBrush StatusBrush => IsBypassSuccess
+            ? FrozenGreen
+            : (IsGeoRestricted ? FrozenAmber : FrozenRed);
+    }
+
+    public sealed record AgentScanSummary(
+        string TargetDomain,
+        bool FoundWorkingDns,
+        AgentDnsProbeRow? BestMatch,
+        List<AgentDnsProbeRow> Results,
+        bool IspSinkholeDetected,
+        string SummaryMessage,
+        bool WasCancelled = false);
+
+    public sealed class CumulativePingStats
+    {
+        private long _sumMs;
+        private long _validCount;
+        private long _totalSent;
+        private long _totalLost;
+        private long? _lastValid;
+        private double _rfcJitter;
+        private bool _hasJitter;
+
+        public long? MinMs { get; private set; }
+        public long? MaxMs { get; private set; }
+        public long? AvgMs => _validCount > 0 ? _sumMs / _validCount : null;
+        public long? JitterMs => _hasJitter ? (long)Math.Round(_rfcJitter) : null;
+        public long TotalSent => _totalSent;
+        public long TotalLost => _totalLost;
+        public double LossPercent => _totalSent > 0 ? Math.Round(_totalLost * 100.0 / _totalSent, 1) : 0.0;
+        public bool HasSample => _totalSent > 0;
+
+        public void Reset()
+        {
+            _sumMs = 0;
+            _validCount = 0;
+            _totalSent = 0;
+            _totalLost = 0;
+            _lastValid = null;
+            _rfcJitter = 0;
+            _hasJitter = false;
+            MinMs = null;
+            MaxMs = null;
+        }
+
+        public void Record(long? ms)
+        {
+            _totalSent++;
+            if (ms.HasValue && ms.Value >= 0)
+            {
+                long v = ms.Value;
+                _validCount++;
+                _sumMs += v;
+                if (!MinMs.HasValue || v < MinMs.Value) MinMs = v;
+                if (!MaxMs.HasValue || v > MaxMs.Value) MaxMs = v;
+                if (_lastValid.HasValue)
+                {
+                    double diff = Math.Abs(v - _lastValid.Value);
+                    _rfcJitter = _hasJitter ? _rfcJitter + (diff - _rfcJitter) / 16.0 : diff;
+                    _hasJitter = true;
+                }
+                _lastValid = v;
+            }
+            else
+            {
+                _totalLost++;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tracks true full-session metrics (Rx/Tx downloaded bytes, peak speeds, cumulative full-session
+    /// min/avg/max/jitter/loss across Global, Intranet, Router, latency sparkline, and Agent history)
+    /// for the currently active DNS server.
+    /// </summary>
+    public sealed class DnsSessionTracker
+    {
+        private readonly List<long> _globalLatencyHistory = new();
+        private readonly List<string> _agentEvents = new();
+        private long _sessionStartRx = -1;
+        private long _sessionStartTx = -1;
+        private long _currentRx;
+        private long _currentTx;
+
+        public DateTime StartedAtLocal { get; private set; } = DateTime.Now;
+        public string ActiveDnsDisplay { get; private set; } = "Automatic DHCP";
+        public string ActivePrimaryIp { get; private set; } = "DHCP";
+        public string AdapterName { get; private set; } = string.Empty;
+        public bool DohActive { get; private set; }
+        public double PeakDownloadBytesPerSec { get; private set; }
+        public double PeakUploadBytesPerSec { get; private set; }
+
+        public CumulativePingStats GlobalStats { get; } = new();
+        public CumulativePingStats IntranetStats { get; } = new();
+        public CumulativePingStats RouterStats { get; } = new();
+
+        public long SessionBytesReceived => _sessionStartRx >= 0 ? Math.Max(0, _currentRx - _sessionStartRx) : 0;
+        public long SessionBytesSent => _sessionStartTx >= 0 ? Math.Max(0, _currentTx - _sessionStartTx) : 0;
+        public TimeSpan Elapsed => DateTime.Now - StartedAtLocal;
+
+        public IReadOnlyList<long> GlobalLatencyHistory => _globalLatencyHistory;
+        public IReadOnlyList<string> AgentEvents => _agentEvents;
+
+        public void ResetSession(string adapterName, string primaryIp, string dnsDisplay, bool dohActive, long currentRxBytes = -1, long currentTxBytes = -1)
+        {
+            StartedAtLocal = DateTime.Now;
+            AdapterName = adapterName;
+            ActivePrimaryIp = string.IsNullOrWhiteSpace(primaryIp) ? "DHCP" : primaryIp;
+            ActiveDnsDisplay = string.IsNullOrWhiteSpace(dnsDisplay) ? "Automatic DHCP" : dnsDisplay;
+            DohActive = dohActive;
+            _sessionStartRx = currentRxBytes;
+            _sessionStartTx = currentTxBytes;
+            _currentRx = Math.Max(0, currentRxBytes);
+            _currentTx = Math.Max(0, currentTxBytes);
+            PeakDownloadBytesPerSec = 0;
+            PeakUploadBytesPerSec = 0;
+            _globalLatencyHistory.Clear();
+            GlobalStats.Reset();
+            IntranetStats.Reset();
+            RouterStats.Reset();
+        }
+
+        public void UpdateTraffic(string adapterName, string primaryIp, string dnsDisplay, bool dohActive, long rxBytes, long txBytes, double dlRate, double ulRate)
+        {
+            bool dnsChanged = !string.Equals(ActivePrimaryIp, string.IsNullOrWhiteSpace(primaryIp) ? "DHCP" : primaryIp, StringComparison.OrdinalIgnoreCase);
+            bool adapterChanged = !string.Equals(AdapterName, adapterName, StringComparison.OrdinalIgnoreCase);
+
+            if (dnsChanged || adapterChanged)
+            {
+                ResetSession(adapterName, primaryIp, dnsDisplay, dohActive, rxBytes, txBytes);
+                return;
+            }
+
+            ActiveDnsDisplay = string.IsNullOrWhiteSpace(dnsDisplay) ? "Automatic DHCP" : dnsDisplay;
+            DohActive = dohActive;
+
+            if (_sessionStartRx < 0 || rxBytes < _sessionStartRx)
+                _sessionStartRx = rxBytes;
+            if (_sessionStartTx < 0 || txBytes < _sessionStartTx)
+                _sessionStartTx = txBytes;
+
+            _currentRx = rxBytes;
+            _currentTx = txBytes;
+            if (dlRate > PeakDownloadBytesPerSec) PeakDownloadBytesPerSec = dlRate;
+            if (ulRate > PeakUploadBytesPerSec) PeakUploadBytesPerSec = ulRate;
+        }
+
+        public void RecordPingSamples(long? globalMs, long? intranetMs, long? routerMs, bool hasRouter)
+        {
+            GlobalStats.Record(globalMs);
+            IntranetStats.Record(intranetMs);
+            if (hasRouter)
+                RouterStats.Record(routerMs);
+
+            if (globalMs.HasValue && globalMs.Value >= 0)
+            {
+                _globalLatencyHistory.Add(globalMs.Value);
+                if (_globalLatencyHistory.Count > 160)
+                    _globalLatencyHistory.RemoveAt(0);
+            }
+        }
+
+        public void RecordAgentEvent(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return;
+            _agentEvents.Add($"[{DateTime.Now:HH:mm:ss}] {text.Trim()}");
+            if (_agentEvents.Count > 40)
+                _agentEvents.RemoveAt(0);
         }
     }
 

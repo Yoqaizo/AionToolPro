@@ -127,7 +127,7 @@
                         <Border DockPanel.Dock="Bottom" Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="8" Padding="10,7" Margin="0,10,0,0">
                             <StackPanel>
                                 <TextBlock Text="Created By Yoqaizo" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}"/>
-                                <TextBlock x:Name="TxtAppVersion" Text="0.9.2" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource MutedTextBrush}" Margin="0,1,0,0"/>
+                                <TextBlock x:Name="TxtAppVersion" Text="0.9.4" FontSize="10.5" FontFamily="{StaticResource MonoFontFamily}" Foreground="{DynamicResource MutedTextBrush}" Margin="0,1,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -200,8 +200,8 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 2. Intranet Ping: Click to cycle (Arvan / SalatinGames / ParsVDS / Iran.ir) -->
-                        <Border x:Name="CardIntranetPing" Style="{StaticResource ClickableTelemetryPingCardStyle}" MouseLeftButtonUp="CardIntranetPing_Click" ToolTip="Click to switch Intranet ping server (arvancloud.ir / salatingames.ir / parsvds.com / iran.ir)">
+                        <!-- 2. Intranet Ping: Click to cycle (Arvan / SalatinGames / ParsVDS) -->
+                        <Border x:Name="CardIntranetPing" Style="{StaticResource ClickableTelemetryPingCardStyle}" MouseLeftButtonUp="CardIntranetPing_Click" ToolTip="Click to switch Intranet ping server (arvancloud.ir / salatingames.ir / parsvds.com)">
                             <StackPanel>
                                 <Grid Height="20">
                                     <Grid.ColumnDefinitions>
@@ -314,8 +314,8 @@
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBlock x:Name="LblDashStatusHeader" Grid.Column="0" Text="SYSTEM NETWORK STATUS" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                            <Border x:Name="BdGameBoosterPill" Grid.Column="1" Background="#2210B981" BorderBrush="#10B981" BorderThickness="1" CornerRadius="6" Padding="8,2" VerticalAlignment="Center" Visibility="Collapsed">
-                                                <TextBlock x:Name="TxtGameBoosterPill" Text="GAME MODE ACTIVE" FontSize="9.5" FontWeight="Bold" Foreground="#10B981"/>
+                                            <Border x:Name="BdAgentStatusPill" Grid.Column="1" Background="#2210B981" BorderBrush="#10B981" BorderThickness="1" CornerRadius="6" Padding="8,2" VerticalAlignment="Center" Visibility="Collapsed">
+                                                <TextBlock x:Name="TxtAgentStatusPill" Text="● AGENT MONITORING" FontSize="9.5" FontWeight="Bold" Foreground="#10B981"/>
                                             </Border>
                                         </Grid>
                                         <TextBlock x:Name="TxtDashboardAdapterSummary"
@@ -327,13 +327,65 @@
 
                                         <Border Height="1" Background="{DynamicResource BorderHairlineBrush}" Margin="0,0,0,12" Opacity="0.7"/>
 
-                                        <!-- Strictly 4 Clean Primary Dashboard Actions -->
+                                        <!-- Clean Primary Dashboard Action Bar -->
                                         <WrapPanel VerticalAlignment="Center">
-                                            <Button x:Name="BtnGameBooster" Content="🎮 Game Booster" Click="BtnGameBooster_Click" Style="{StaticResource SuccessBtnStyle}" Padding="16,8" Margin="0,0,10,4"/>
+                                            <Button x:Name="BtnSmartAgent" Content="🤖 Smart Agent" Click="BtnSmartAgent_Click" Style="{StaticResource SuccessBtnStyle}" Padding="16,8" Margin="0,0,10,4" ToolTip="Toggle Live Anti-Sanction Smart DNS Agent"/>
                                             <Button x:Name="BtnDashFastestDns" Content="⚡ Fastest DNS" Click="BtnBenchmarkDns_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="16,8" Margin="0,0,10,4"/>
-                                            <Button x:Name="BtnDashResetDns" Content="↺ Reset DNS" Click="BtnResetDnsDhcp_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="16,8" Margin="0,0,10,4" ToolTip="Reset DNS to automatic DHCP and clear DNS cache"/>
-                                            <Button x:Name="BtnDashResetAdapter" Content="↻ Reset Adaptor" Click="BtnFullAdapterReset_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="16,8" Margin="0,0,0,4" ToolTip="Full network adaptor reset and IP renew"/>
+                                            <Button x:Name="BtnDashDnsReport" Content="📊 DNS Report" Click="BtnDnsSessionReport_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="15,8" Margin="0,0,10,4" ToolTip="Scan active DNS &amp; export a graphical telemetry report (.txt)"/>
+                                            <Button x:Name="BtnDashResetDns" Content="↺ Reset DNS" Click="BtnResetDnsDhcp_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="15,8" Margin="0,0,10,4" ToolTip="Reset DNS to automatic DHCP and clear DNS cache"/>
+                                            <Button x:Name="BtnDashResetAdapter" Content="↻ Reset Adaptor" Click="BtnFullAdapterReset_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="15,8" Margin="0,0,0,4" ToolTip="Full network adaptor reset and IP renew"/>
                                         </WrapPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- ==================== SMART ANTI-SANCTION DNS AGENT LIVE PANEL ==================== -->
+                                <Border x:Name="PanelSmartAgent" Style="{StaticResource SectionCardStyle}" Padding="16,14" BorderBrush="{DynamicResource AccentBrush}" Visibility="Collapsed">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock x:Name="LblSmartAgentTitle" Text="🤖 SMART ANTI-SANCTION DNS AGENT" FontSize="13.5" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
+                                                <TextBlock x:Name="TxtAgentLiveStatus" Text="Ready — enter any website or click a service below to test all DNS servers in parallel and auto-connect." FontSize="11.5" Foreground="{DynamicResource MutedTextBrush}" Margin="0,2,10,0" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <CheckBox x:Name="ChkAgentAutoFailover" Grid.Column="1" Content="Auto-Failover Guard" IsChecked="True" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}" VerticalAlignment="Center" Checked="ChkAgentAutoFailover_Changed" Unchecked="ChkAgentAutoFailover_Changed" ToolTip="Automatically switch DNS if packet loss spikes or the active target site stops responding"/>
+                                        </Grid>
+
+                                        <!-- Target Site Input + Scan & Auto-Connect -->
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="TxtAgentTargetSite" Grid.Column="0" Height="34" FontFamily="{StaticResource MonoFontFamily}" FlowDirection="LeftToRight" Text="discord.com" KeyDown="TxtAgentTargetSite_KeyDown" Margin="0,0,8,0" ToolTip="Enter any HTTPS or HTTP website (press Enter to scan all DNS servers)"/>
+                                            <Button x:Name="BtnAgentScanConnect" Grid.Column="1" Content="🎯 Scan &amp; Connect" Click="BtnAgentScanConnect_Click" Style="{StaticResource PrimaryBtnStyle}" Padding="15,7" Margin="0,0,8,0"/>
+                                            <Button x:Name="BtnAgentApplySelected" Grid.Column="2" Content="✓ Apply Row" Click="BtnAgentApplySelected_Click" Style="{StaticResource SecondaryBtnStyle}" Padding="12,7" Margin="0"/>
+                                        </Grid>
+
+                                        <!-- Quick One-Click Popular Sanctioned Services -->
+                                        <WrapPanel x:Name="AgentQuickSitesWrap" Margin="0,0,0,10" FlowDirection="LeftToRight"/>
+
+                                        <!-- Live Multi-DNS Anti-Sanction Results Table -->
+                                        <DataGrid x:Name="GridAgentResults" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single" FlowDirection="LeftToRight" Height="165" Visibility="Collapsed">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="DNS Provider" Binding="{Binding ProviderName}" Width="125"/>
+                                                <DataGridTextColumn Header="DNS IP" Binding="{Binding PrimaryIp}" Width="118"/>
+                                                <DataGridTextColumn Header="Resolved IP" Binding="{Binding ResolvedIp}" Width="118"/>
+                                                <DataGridTextColumn Header="Latency" Binding="{Binding LatencyDisplay}" Width="88"/>
+                                                <DataGridTextColumn Header="Bypass Status" Binding="{Binding StatusText}" Width="*">
+                                                    <DataGridTextColumn.ElementStyle>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{Binding StatusBrush}"/>
+                                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                                        </Style>
+                                                    </DataGridTextColumn.ElementStyle>
+                                                </DataGridTextColumn>
+                                            </DataGrid.Columns>
+                                        </DataGrid>
                                     </StackPanel>
                                 </Border>
 
@@ -802,7 +854,7 @@
                                                 <StackPanel>
                                                     <TextBlock x:Name="LblHelpCard2Title" Text="📊 Interactive Live Ping Monitors" FontWeight="Bold" FontSize="13.5" Foreground="#10B981" Margin="0,0,0,6"/>
                                                     <TextBlock x:Name="TxtHelpCard2Body" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="20"
-                                                               Text="• Click Global Card to Switch Server: Cycles between 1.1.1.1 (Cloudflare), 8.8.8.8 (Google), 9.9.9.9 (Quad9), and 4.2.2.4.&#x0a;• Click Intranet Card to Switch Server: Cycles between arvancloud.ir, salatingames.ir, parsvds.com, and iran.ir.&#x0a;• System-Grade Accuracy: Standard 32-byte TTL=128 ICMP, RFC 3550 jitter, honest 40-packet loss, and automatic TCP ONLY fallback if ICMP is blocked."/>
+                                                               Text="• Click Global Card to Switch Server: Cycles between 1.1.1.1 (Cloudflare), 8.8.8.8 (Google), 9.9.9.9 (Quad9), and 4.2.2.4.&#x0a;• Click Intranet Card to Switch Server: Cycles between arvancloud.ir, salatingames.ir, and parsvds.com.&#x0a;• System-Grade Accuracy: Standard 32-byte TTL=128 ICMP, RFC 3550 jitter, honest 40-packet loss, and automatic TCP ONLY fallback if ICMP is blocked."/>
                                                 </StackPanel>
                                             </Border>
 
@@ -836,9 +888,9 @@
                                             <!-- Card 6 -->
                                             <Border Background="{DynamicResource InputSurfaceBrush}" BorderBrush="{DynamicResource BorderHairlineBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="4,0,4,0">
                                                 <StackPanel>
-                                                    <TextBlock x:Name="LblHelpCard6Title" Text="🛡️ Game Booster, Maintenance &amp; Updates" FontWeight="Bold" FontSize="13.5" Foreground="#F43F5E" Margin="0,0,0,6"/>
+                                                    <TextBlock x:Name="LblHelpCard6Title" Text="🤖 Smart Agent, DNS Reports &amp; Maintenance" FontWeight="Bold" FontSize="13.5" Foreground="#F43F5E" Margin="0,0,0,6"/>
                                                     <TextBlock x:Name="TxtHelpCard6Body" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource PrimaryTextBrush}" LineHeight="20"
-                                                               Text="• Safe Game Booster: Pauses only currently running non-essential services and restores exact original state with Restore Normal.&#x0a;• Maintenance &amp; Repair: 24h-guarded Temp cleaner (protects %TEMP%\.net), DISM+SFC, safe Windows Update reset, Proxy &amp; Firewall backup/reset.&#x0a;• System Tray &amp; Auto-Updater: Quick DNS tray menu, elevated Start-with-Windows, and SHA-256 verified silent GitHub updates."/>
+                                                               Text="• Smart Anti-Sanction Agent: Scans all DNS servers in parallel (RFC 1035 + TLS SNI + HTTP check) for any website, detects ISP sinkholes, and auto-connects the fastest working DNS with live failover.&#x0a;• Graphical DNS Report: Tracks exact Rx/Tx downloaded data, ping min/avg/max, jitter, loss, and latency sparkline for your active DNS and exports a clean box-drawn .txt report.&#x0a;• Maintenance &amp; Updates: Safe 24h Temp cleaner, DISM+SFC, Windows Update reset, and Graphical Update Center."/>
                                                 </StackPanel>
                                             </Border>
                                         </UniformGrid>
@@ -936,7 +988,7 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock x:Name="TxtUpdateVersionFlow"
                                            Grid.Column="0"
-                                           Text="v0.9.2  →  v0.9.3"
+                                           Text="v0.9.4  →  v0.9.5"
                                            FontFamily="{StaticResource MonoFontFamily}"
                                            FontSize="13"
                                            FontWeight="Bold"

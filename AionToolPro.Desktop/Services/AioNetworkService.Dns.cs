@@ -226,6 +226,7 @@ namespace AionToolPro.Desktop.Services
         public async Task<OperationResult> ResetDnsToDhcpAsync(string interfaceName, CancellationToken token = default)
         {
             interfaceName = ValidateInterfaceName(interfaceName);
+            ClearPerInterfaceDohRegistry(interfaceName);
             var r1 = await ExecAsync("netsh", new[] { "interface", "ip", "set", "dnsservers", $"name={interfaceName}", "source=dhcp" }, token).ConfigureAwait(false);
             await ExecAsync("netsh", new[] { "interface", "ipv6", "set", "dnsservers", $"name={interfaceName}", "source=dhcp" }, token, silent: true).ConfigureAwait(false);
             await ExecAsync("ipconfig", new[] { "/flushdns" }, token, silent: true).ConfigureAwait(false);
@@ -308,6 +309,7 @@ namespace AionToolPro.Desktop.Services
                     bool isPrivate = AioCatalog.IsPrivateIpv4(provider.PrimaryIp);
                     var samples = new List<long>();
                     int totalQueries = 0;
+                    int sinkholeHits = 0;
 
                     for (int round = 0; round < 2; round++)
                     {
@@ -315,14 +317,26 @@ namespace AionToolPro.Desktop.Services
                         {
                             token.ThrowIfCancellationRequested();
                             totalQueries++;
-                            long? ms = await QueryDnsUdpLatencyMsAsync(provider.PrimaryIp, dom, 1400, token).ConfigureAwait(false);
-                            if (ms.HasValue) samples.Add(ms.Value);
+                            var (ms, ips) = await ResolveDomainViaDnsServerAsync(provider.PrimaryIp, dom, 1400, token).ConfigureAwait(false);
+                            if (ms.HasValue && ips.Count > 0)
+                            {
+                                if (ips.All(IsSinkholeOrBogusIp))
+                                {
+                                    sinkholeHits++;
+                                }
+                                else
+                                {
+                                    samples.Add(ms.Value);
+                                }
+                            }
                         }
                     }
 
                     if (samples.Count == 0)
                     {
-                        string status = isPrivate ? "Unreachable (ISP-only)" : "Timeout / Blocked";
+                        string status = sinkholeHits > 0
+                            ? "Filtered / Sinkhole"
+                            : (isPrivate ? "Unreachable (ISP-only)" : "Timeout / Blocked");
                         return new DnsBenchmarkRow(provider.Index, provider.Name, provider.PrimaryIp, provider.SecondaryIp, provider.CategoryLabel, null, status, isPrivate);
                     }
 
@@ -504,10 +518,10 @@ namespace AionToolPro.Desktop.Services
             }
         }
 
-        private void ApplyPerInterfaceDohRegistry(string interfaceName, DnsProviderModel provider)
+        private void ApplyPerInterfaceDohRegistry(string interfaceName, DnsProviderModel provider, bool enableDoh = true)
         {
             string? nicGuid = GetInterfaceGuidByName(interfaceName);
-            if (string.IsNullOrWhiteSpace(nicGuid) || string.IsNullOrWhiteSpace(provider.DohTemplateUrl))
+            if (string.IsNullOrWhiteSpace(nicGuid))
                 return;
 
             try
@@ -518,9 +532,10 @@ namespace AionToolPro.Desktop.Services
                     if (string.IsNullOrWhiteSpace(ip) || !IPAddress.TryParse(ip, out _)) return;
                     using var key = Registry.LocalMachine.CreateSubKey($@"{basePath}\{subFolder}\{ip}", writable: true);
                     if (key == null) return;
-                    // DohFlags = 1 => On (automatic template with UDP fallback) in Windows 11 Settings
-                    key.SetValue("DohFlags", 1L, RegistryValueKind.QWord);
-                    key.SetValue("DohTemplate", provider.DohTemplateUrl, RegistryValueKind.String);
+                    // DohFlags: 1 = On (automatic template with UDP fallback), 0 = Explicitly Off (prevents Windows 11 auto-upgrade when user toggled DoH OFF)
+                    key.SetValue("DohFlags", enableDoh ? 1L : 0L, RegistryValueKind.QWord);
+                    if (enableDoh && !string.IsNullOrWhiteSpace(provider.DohTemplateUrl))
+                        key.SetValue("DohTemplate", provider.DohTemplateUrl, RegistryValueKind.String);
                 }
 
                 WriteServerEntry("Doh", provider.PrimaryIp);
@@ -531,11 +546,20 @@ namespace AionToolPro.Desktop.Services
                 if (!string.IsNullOrWhiteSpace(provider.SecondaryIpv6) && !provider.SecondaryIpv6.Equals(provider.PrimaryIpv6, StringComparison.OrdinalIgnoreCase))
                     WriteServerEntry("Doh6", provider.SecondaryIpv6);
 
-                WriteDiagnosticLog("DoH", $"Applied per-interface Dnscache DoH registry keys for {provider.Name} on {interfaceName} ({nicGuid}).");
+                WriteDiagnosticLog("DoH", $"Set per-interface Dnscache DohFlags={(enableDoh ? 1 : 0)} for {provider.Name} on {interfaceName} ({nicGuid}).");
             }
             catch (Exception ex)
             {
                 WriteDiagnosticLog("DoH", $"Per-interface DoH registry warning on {interfaceName}: {ex.Message}");
+            }
+        }
+
+        public void DisablePerInterfaceDohForProvider(string interfaceName, DnsProviderModel? provider = null)
+        {
+            ClearPerInterfaceDohRegistry(interfaceName);
+            if (provider != null && provider.HasDoh && Environment.OSVersion.Version.Build >= 22000)
+            {
+                ApplyPerInterfaceDohRegistry(interfaceName, provider, enableDoh: false);
             }
         }
 
@@ -624,7 +648,7 @@ namespace AionToolPro.Desktop.Services
             }
             else
             {
-                ClearPerInterfaceDohRegistry(interfaceName);
+                DisablePerInterfaceDohForProvider(interfaceName, provider);
             }
 
             return await ApplyDnsAsync(
@@ -675,6 +699,9 @@ namespace AionToolPro.Desktop.Services
             if (!string.IsNullOrWhiteSpace(provider.SecondaryIp)) tracked.Add(provider.SecondaryIp);
             TrackManagedDohServers(tracked);
 
+            // Write per-interface DoH flags BEFORE netsh set dnsservers so Windows 11 Dnscache activates DoH immediately on interface reconfigure
+            ApplyPerInterfaceDohRegistry(interfaceName, provider, enableDoh: true);
+
             var applyRes = await ApplyDnsAsync(
                 interfaceName,
                 provider.PrimaryIp,
@@ -686,7 +713,7 @@ namespace AionToolPro.Desktop.Services
 
             if (applyRes.Success)
             {
-                ApplyPerInterfaceDohRegistry(interfaceName, provider);
+                ApplyPerInterfaceDohRegistry(interfaceName, provider, enableDoh: true);
                 await ExecAsync("ipconfig", new[] { "/flushdns" }, token, silent: true).ConfigureAwait(false);
                 ClearDnsResolveCache();
                 Emit($"[DoH] Encrypted DNS-over-HTTPS is ACTIVE for {provider.Name} on '{interfaceName}' (autoupgrade=yes, udpfallback=yes).");

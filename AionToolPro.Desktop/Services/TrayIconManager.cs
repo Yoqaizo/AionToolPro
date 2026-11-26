@@ -20,6 +20,8 @@ namespace AionToolPro.Desktop.Services
         private const uint NIF_MESSAGE = 0x00000001;
         private const uint NIF_ICON = 0x00000002;
         private const uint NIF_TIP = 0x00000004;
+        private const uint NIF_INFO = 0x00000010;
+        private const uint NIIF_INFO = 0x00000001;
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         private struct NOTIFYICONDATA
@@ -150,6 +152,29 @@ namespace AionToolPro.Desktop.Services
             };
 
             Shell_NotifyIconW(NIM_MODIFY, ref nid);
+        }
+
+        public void ShowTrayBalloon(string title, string message)
+        {
+            if (_disposed || !_isAdded || _hwnd == IntPtr.Zero) return;
+            try
+            {
+                string safeTitle = string.IsNullOrWhiteSpace(title) ? "AionToolPro" : (title.Length <= 62 ? title : title[..62]);
+                string safeMsg = string.IsNullOrWhiteSpace(message) ? "" : (message.Length <= 250 ? message : message[..250]);
+                var nid = new NOTIFYICONDATA
+                {
+                    cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATA>(),
+                    hWnd = _hwnd,
+                    uID = 1001,
+                    uFlags = NIF_INFO,
+                    szInfoTitle = safeTitle,
+                    szInfo = safeMsg,
+                    dwInfoFlags = NIIF_INFO,
+                    uTimeoutOrVersion = 3500
+                };
+                Shell_NotifyIconW(NIM_MODIFY, ref nid);
+            }
+            catch { }
         }
 
         private static string TruncateTip(string tip)

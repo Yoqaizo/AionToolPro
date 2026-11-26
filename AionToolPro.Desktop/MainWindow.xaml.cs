@@ -27,6 +27,7 @@ namespace AionToolPro.Desktop
         private readonly DispatcherTimer _pingTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
         private readonly DispatcherTimer _consoleFlushTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
         private readonly DispatcherTimer _settingsSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(320) };
+        private readonly DispatcherTimer _agentWatchTimer = new() { Interval = TimeSpan.FromSeconds(14.0) };
         private readonly ConcurrentQueue<string> _consoleQueue = new();
         private readonly NetworkAddressChangedEventHandler _networkAddressChangedHandler;
         private CancellationTokenSource? _networkChangeDebounceCts;
@@ -47,8 +48,19 @@ namespace AionToolPro.Desktop
         {
             ("www.arvancloud.ir",   "ARVAN",   "آروان"),
             ("www.salatingames.ir", "SALATIN", "سلاطین‌گیم"),
-            ("parsvds.com",         "PARSVDS", "پارس‌وی‌دی‌اس"),
-            ("iran.ir",             "IRAN.IR", "ایران")
+            ("parsvds.com",         "PARSVDS", "پارس‌وی‌دی‌اس")
+        };
+
+        private static readonly (string Label, string Domain)[] AgentQuickSites =
+        {
+            ("Discord",   "discord.com"),
+            ("Steam",     "steamcommunity.com"),
+            ("Riot",      "riotgames.com"),
+            ("Epic",      "epicgames.com"),
+            ("ChatGPT",   "chatgpt.com"),
+            ("Spotify",   "spotify.com"),
+            ("EA",        "ea.com"),
+            ("GitHub",    "github.com")
         };
 
         private string _globalPingTarget = "1.1.1.1";
@@ -78,7 +90,15 @@ namespace AionToolPro.Desktop
         private bool _isPingRunning;
         private bool _pingRescanRequested;
         private bool _autoRefreshAppMonitor;
-        private bool _isGameBoosterActive;
+        private bool _isAgentActive;
+        private bool _isAgentScanning;
+        private bool _agentAutoFailover = true;
+        private bool _hasShownTrayBalloon;
+        private bool _lastAdapterIsUp = true;
+        private int _agentConsecutiveTargetFails;
+        private string _agentLastTargetDomain = "discord.com";
+        private DateTime _lastAgentFailoverUtc = DateTime.MinValue;
+        private readonly DnsSessionTracker _dnsSessionTracker = new();
         private bool _isUpdateBusy;
         private CancellationTokenSource? _updateCts;
         private UpdateCheckResult? _pendingUpdateInfo;
@@ -155,6 +175,7 @@ namespace AionToolPro.Desktop
 
             _nicTimer.Tick += async (_, _) => await RefreshNicTelemetryAsync();
             _pingTimer.Tick += async (_, _) => await RefreshPingTelemetryAsync();
+            _agentWatchTimer.Tick += async (_, _) => await RunAgentLiveWatchTickAsync();
             Loaded += MainWindow_Loaded;
             StateChanged += MainWindow_StateChanged;
             Activated += MainWindow_Activated;
@@ -398,7 +419,7 @@ namespace AionToolPro.Desktop
             {
                 if (WindowState == WindowState.Minimized && ChkMinimizeToTray.IsChecked == true)
                 {
-                    Hide();
+                    HideToTrayWithOneTimeNotice();
                     return;
                 }
                 ApplyWindowMaximizeBounds();
@@ -441,7 +462,6 @@ namespace AionToolPro.Desktop
 
                 bool autoStartOn = await _service.IsStartWithWindowsEnabledAsync();
                 ChkStartWithWindows.IsChecked = autoStartOn;
-                _isGameBoosterActive = _service.IsGameBoosterActive();
 
                 TxtAppVersion.Text = AioNetworkService.GetAppVersionString();
                 _isInitialized = true;
@@ -491,6 +511,7 @@ namespace AionToolPro.Desktop
                 }
                 _nicTimer.Stop();
                 _pingTimer.Stop();
+                _agentWatchTimer.Stop();
                 _consoleFlushTimer.Stop();
                 _networkChangeDebounceCts?.Cancel();
                 _networkChangeDebounceCts?.Dispose();
@@ -530,11 +551,25 @@ namespace AionToolPro.Desktop
         private void BtnMaximize_Click(object sender, RoutedEventArgs e) =>
             WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
+        private void HideToTrayWithOneTimeNotice()
+        {
+            Hide();
+            if (!_hasShownTrayBalloon)
+            {
+                _hasShownTrayBalloon = true;
+                bool fa = _currentLang == "fa";
+                _trayManager?.ShowTrayBalloon(
+                    "AionToolPro",
+                    fa ? "برنامه همچنان در سینی سیستم (System Tray) فعال است. برای باز کردن دوباره دابل‌کلیک و برای خروج کلیک‌راست کنید."
+                       : "AionToolPro is still running in the System Tray. Double-click to reopen or right-click to exit.");
+            }
+        }
+
         private void BtnClose_Click(object sender, RoutedEventArgs e)
         {
             if (!_forceExit && _isInitialized && ChkMinimizeToTray.IsChecked == true)
             {
-                Hide();
+                HideToTrayWithOneTimeNotice();
                 return;
             }
             _forceExit = true;
@@ -552,6 +587,7 @@ namespace AionToolPro.Desktop
             BuildThemeSwatchCards();
             BuildSurfaceSwatchCards();
             BuildCustomColorPresets();
+            BuildAgentQuickSiteChips();
             UpdateSwatchSelectionHighlights();
         }
 
@@ -1235,6 +1271,11 @@ namespace AionToolPro.Desktop
             _enableWindowsDoh = saved.EnableWindowsDoh && Environment.OSVersion.Version.Build >= 22000;
             ChkEnableWindowsDoh.IsChecked = _enableWindowsDoh;
 
+            _agentLastTargetDomain = string.IsNullOrWhiteSpace(saved.AgentLastTargetDomain) ? "discord.com" : saved.AgentLastTargetDomain.Trim();
+            TxtAgentTargetSite.Text = _agentLastTargetDomain;
+            _agentAutoFailover = saved.AgentAutoFailover;
+            ChkAgentAutoFailover.IsChecked = _agentAutoFailover;
+
             _currentLang = saved.LanguageCode == "fa" ? "fa" : "en";
             ComboLanguage.SelectedIndex = _currentLang == "fa" ? 1 : 0;
 
@@ -1315,8 +1356,8 @@ namespace AionToolPro.Desktop
                 ? $"سرور فعلی: {_globalPingTarget} — برای تغییر منبع پینگ جهانی کلیک کنید (1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 4.2.2.4)"
                 : $"Active: {_globalPingTarget} — Click to switch Global ping server (1.1.1.1 / 8.8.8.8 / 9.9.9.9 / 4.2.2.4)";
             CardIntranetPing.ToolTip = fa
-                ? $"سرور فعلی: {_intranetPingTarget} — برای تغییر منبع پینگ داخلی کلیک کنید (آروان / سلاطین‌گیم / پارس‌وی‌دی‌اس / ایران)"
-                : $"Active: {_intranetPingTarget} — Click to switch Intranet ping server (arvancloud.ir / salatingames.ir / parsvds.com / iran.ir)";
+                ? $"سرور فعلی: {_intranetPingTarget} — برای تغییر منبع پینگ داخلی کلیک کنید (آروان / سلاطین‌گیم / پارس‌وی‌دی‌اس)"
+                : $"Active: {_intranetPingTarget} — Click to switch Intranet ping server (arvancloud.ir / salatingames.ir / parsvds.com)";
         }
 
         private void ResetLiveTelemetryBaselines()
@@ -1351,7 +1392,9 @@ namespace AionToolPro.Desktop
                 _customAccentHex,
                 _customSecondaryHex,
                 _enableDiagnosticLogs,
-                _enableWindowsDoh);
+                _enableWindowsDoh,
+                _agentLastTargetDomain,
+                _agentAutoFailover);
         }
 
         private async Task LoadNetworkInterfacesAsync(bool preserveSelection = false)
@@ -1408,12 +1451,18 @@ namespace AionToolPro.Desktop
             LblActiveDnsCard.Text  = fa ? "دی‌ان‌اس فعال" : "ACTIVE DNS";
 
             LblDashStatusHeader.Text      = fa ? "وضعیت لحظه‌ای شبکه سیستم" : "SYSTEM NETWORK STATUS";
-            UpdateGameBoosterButtonUi();
+            UpdateSmartAgentButtonUi();
             BtnDashFastestDns.Content     = fa ? "⚡ سریع‌ترین دی‌ان‌اس" : "⚡ Fastest DNS";
+            BtnDashDnsReport.Content      = fa ? "📊 گزارش دی‌ان‌اس" : "📊 DNS Report";
+            BtnDashDnsReport.ToolTip      = fa ? "اسکن زنده و خروجی گزارش گرافیکی متنی (دانلود، پینگ، جیتر و پکت لاست) برای دی‌ان‌اس فعلی" : "Scan active DNS & export a graphical telemetry report (.txt)";
             BtnDashResetDns.Content       = fa ? "↺ ریست دی‌ان‌اس" : "↺ Reset DNS";
             BtnDashResetDns.ToolTip       = fa ? "بازگردانی دی‌ان‌اس به حالت خودکار (DHCP) و پاکسازی کامل کش دی‌ان‌اس" : "Reset DNS to automatic DHCP and clear DNS cache";
             BtnDashResetAdapter.Content   = fa ? "↻ ریست کارت شبکه" : "↻ Reset Adaptor";
             BtnDashResetAdapter.ToolTip   = fa ? "ریست کامل کارت شبکه، تخلیه کش و دریافت مجدد آی‌پی" : "Full network adaptor reset and IP renew";
+            LblSmartAgentTitle.Text       = fa ? "🤖 ایجنت هوشمند تحریم‌گذر و پایداری DNS" : "🤖 SMART ANTI-SANCTION DNS AGENT";
+            ChkAgentAutoFailover.Content  = fa ? "تغییر خودکار در قطعی/افت کیفیت" : "Auto-Failover Guard";
+            BtnAgentScanConnect.Content   = fa ? "🎯 اسکن و اتصال خودکار" : "🎯 Scan & Connect";
+            BtnAgentApplySelected.Content = fa ? "✓ اعمال ردیف انتخابی" : "✓ Apply Row";
             LblDashQuickDnsTitle.Text     = fa ? "تغییر سریع دی‌ان‌اس با یک کلیک" : "QUICK DNS SWITCHER";
             TxtSearchDns.ToolTip          = fa ? "جستجوی DNS بر اساس نام یا آی‌پی..." : "Search DNS by name or IP...";
 
@@ -1554,8 +1603,8 @@ namespace AionToolPro.Desktop
 
             LblHelpCard2Title.Text  = fa ? "📊 مانیتور پینگ زنده (قابل کلیک)" : "📊 Interactive Live Ping Monitors";
             TxtHelpCard2Body.Text   = fa
-                ? "• تغییر پینگ جهانی با کلیک: روی کارت پینگ جهانی کلیک کنید تا بین 1.1.1.1 (کلودفلر)، 8.8.8.8 (گوگل)، 9.9.9.9 و 4.2.2.4 جابه‌جا شود.\n• تغییر پینگ داخلی با کلیک: روی کارت پینگ داخلی کلیک کنید تا بین arvancloud.ir، salatingames.ir، parsvds.com و iran.ir جابه‌جا شود.\n• دقت سیستمی: ارسال بسته استاندارد ۳۲ بایتی ویندوز (TTL=128)، جیتر استاندارد RFC 3550، پکت لاست واقعی ۴۰ بسته و حالت خودکار TCP ONLY در صورت مسدود بودن ICMP."
-                : "• Click Global Card to Switch Server: Cycles between 1.1.1.1 (Cloudflare), 8.8.8.8 (Google), 9.9.9.9 (Quad9), and 4.2.2.4.\n• Click Intranet Card to Switch Server: Cycles between arvancloud.ir, salatingames.ir, parsvds.com, and iran.ir.\n• System-Grade Accuracy: Standard 32-byte TTL=128 ICMP, RFC 3550 jitter, honest 40-packet loss, and automatic TCP ONLY fallback if ICMP is blocked.";
+                ? "• تغییر پینگ جهانی با کلیک: روی کارت پینگ جهانی کلیک کنید تا بین 1.1.1.1 (کلودفلر)، 8.8.8.8 (گوگل)، 9.9.9.9 و 4.2.2.4 جابه‌جا شود.\n• تغییر پینگ داخلی با کلیک: روی کارت پینگ داخلی کلیک کنید تا بین arvancloud.ir، salatingames.ir و parsvds.com جابه‌جا شود.\n• دقت سیستمی: ارسال بسته استاندارد ۳۲ بایتی ویندوز (TTL=128)، جیتر استاندارد RFC 3550، پکت لاست واقعی ۴۰ بسته و حالت خودکار TCP ONLY در صورت مسدود بودن ICMP."
+                : "• Click Global Card to Switch Server: Cycles between 1.1.1.1 (Cloudflare), 8.8.8.8 (Google), 9.9.9.9 (Quad9), and 4.2.2.4.\n• Click Intranet Card to Switch Server: Cycles between arvancloud.ir, salatingames.ir, and parsvds.com.\n• System-Grade Accuracy: Standard 32-byte TTL=128 ICMP, RFC 3550 jitter, honest 40-packet loss, and automatic TCP ONLY fallback if ICMP is blocked.";
 
             LblHelpCard3Title.Text  = fa ? "🌐 استودیو دی‌ان‌اس، پروفایل شخصی و DoH" : "🌐 DNS Studio, Profiles & DoH";
             TxtHelpCard3Body.Text   = fa
@@ -1572,10 +1621,10 @@ namespace AionToolPro.Desktop
                 ? "• پروفایل‌های وای‌فای: استخراج ایمن و مستقل از زبان ویندوز؛ رمزها به صورت پیش‌فرض مخفی هستند و می‌توانید آن‌ها را مشاهده، کپی یا شبکه را فراموش کنید.\n• فایل هاست و مسدودساز تبلیغات: نوشتن اتمیک و ایمن بدون BOM همراه با بکاپ خودکار تاریخ‌دار برای لیست‌های مسدودساز تبلیغات، بدافزار و تیم‌اسپیک."
                 : "• Wi-Fi Profiles: Language-independent extraction with passwords masked by default — reveal, copy, or forget any saved network safely.\n• Hosts Blocklists: Atomic UTF-8 (no BOM) writes with automatic timestamped backups, multi-host line parsing, and ad/malware/TeamSpeak filters.";
 
-            LblHelpCard6Title.Text  = fa ? "🛡️ گیم‌بوستر ایمن، نگهداری و بروزرسانی" : "🛡️ Game Booster, Maintenance & Updates";
+            LblHelpCard6Title.Text  = fa ? "🤖 ایجنت هوشمند تحریم‌گذر، گزارش DNS و نگهداری" : "🤖 Smart Agent, DNS Reports & Maintenance";
             TxtHelpCard6Body.Text   = fa
-                ? "• گیم‌بوستر تک‌دکمه‌ای (سبز/قرمز): با یک کلیک فعال (قرمز) شده و سرویس‌های غیرضروری در حال اجرا را متوقف می‌کند؛ با کلیک مجدد دقیقاً همان سرویس‌ها برمی‌گردند و دکمه سبز می‌شود.\n• نگهداری و تعمیرات: پاکسازی امن فایل‌های موقت قدیمی‌تر از ۲۴ ساعت (با محافظت از کش .NET)، تعمیر سیستمی DISM+SFC، ریست ایمن آپدیت ویندوز، پروکسی و بکاپ فایروال.\n• سینی سیستم و آپدیت خودکار: تغییر سریع DNS از منوی Tray، اجرای خودکار با ویندوز و آپدیت خاموش گیت‌هاب با تایید هش SHA-256."
-                : "• One-Click Game Booster Toggle (Green/Red): Click once (turns Red) to pause running non-essential services; click again (turns Green) to restore exact original services.\n• Maintenance & Repair: 24h-guarded Temp cleaner (protects %TEMP%\\.net), DISM+SFC, safe Windows Update reset, Proxy & Firewall backup/reset.\n• System Tray & Auto-Updater: Quick DNS tray menu, elevated Start-with-Windows, and SHA-256 verified silent GitHub updates.";
+                ? "• ایجنت هوشمند تحریم‌گذر: با روشن کردن ایجنت، برای هر سایتی که وارد کنید تمام سرورهای DNS به‌صورت موازی (کوئری واقعی UDP/53 + تست TLS SNI و HTTP) بررسی شده، آی‌پی‌های فیلتر (Sinkhole) حذف و بهترین DNS کاری خودکار روی سیستم ست می‌شود.\n• گزارش گرافیکی DNS: ثبت دقیق حجم دانلود/آپلود، کمترین/میانگین/بیشترین پینگ، جیتر، پکت لاست و نمودار تاخیر روی دی‌ان‌اس فعلی با خروجی فایل متنی گرافیکی (.txt).\n• نگهداری و بروزرسانی: پاکسازی امن Temp، تعمیر DISM+SFC، دی‌ان‌اس امن ویندوز (DoH) و پنجره گرافیکی آپدیت."
+                : "• Smart Anti-Sanction Agent: Scans all DNS servers in parallel (RFC 1035 + TLS SNI + HTTP check) for any website, detects ISP sinkholes, and auto-connects the fastest working DNS with live auto-failover.\n• Graphical DNS Report: Tracks exact Rx/Tx downloaded data, ping min/avg/max, jitter, loss, and latency sparkline for your active DNS and exports a clean box-drawn .txt report.\n• Maintenance & Updates: Safe 24h Temp cleaner, DISM+SFC, Windows DoH, and Graphical Update Center.";
 
             LblConsoleHeader.Text    = fa ? "▶ خروجی زنده دستورات سیستم" : "▶ LIVE COMMAND STREAM";
             BtnCancelCommand.Content = fa ? "⏹ توقف" : "⏹ Stop";
@@ -1603,6 +1652,14 @@ namespace AionToolPro.Desktop
                 GridWifiPasswords.Columns[0].Header = fa ? "نام شبکه (SSID)" : "Wi-Fi SSID";
                 GridWifiPasswords.Columns[1].Header = fa ? "رمز عبور" : "Password";
                 GridWifiPasswords.Columns[2].Header = fa ? "وضعیت امنیت" : "Security Status";
+            }
+            if (GridAgentResults.Columns.Count >= 5)
+            {
+                GridAgentResults.Columns[0].Header = fa ? "ارائه‌دهنده DNS" : "DNS Provider";
+                GridAgentResults.Columns[1].Header = fa ? "آی‌پی DNS" : "DNS IP";
+                GridAgentResults.Columns[2].Header = fa ? "آی‌پی مقصد" : "Resolved IP";
+                GridAgentResults.Columns[3].Header = fa ? "تاخیر" : "Latency";
+                GridAgentResults.Columns[4].Header = fa ? "وضعیت اتصال و تحریم‌گذر" : "Bypass Status";
             }
 
             BtnMinimize.ToolTip = fa ? "کوچک‌نمایی" : "Minimize";
@@ -1636,11 +1693,14 @@ namespace AionToolPro.Desktop
                 bool hasRouter = !string.IsNullOrWhiteSpace(_detectedRouterIp);
                 TxtRouterCardTitle.Text = hasRouter ? $"ROUTER · {_detectedRouterIp}" : "PC ↔ ROUTER";
 
+                _lastAdapterIsUp = snap.Found && snap.IsUp;
                 if (snap.Found)
                 {
                     double rxMb = Math.Round(snap.BytesReceived / 1048576.0, 1);
                     double txMb = Math.Round(snap.BytesSent / 1048576.0, 1);
 
+                    double currentDlRate = 0;
+                    double currentUlRate = 0;
                     if (!snap.IsUp)
                     {
                         TxtSpeedDl.Text = "⬇ 0 KB/s";
@@ -1651,10 +1711,10 @@ namespace AionToolPro.Desktop
                         double secs = (DateTime.Now - _lastTick).TotalSeconds;
                         if (secs > 0.1)
                         {
-                            double dlRate = Math.Max(0, snap.BytesReceived - _lastRxBytes) / secs;
-                            double ulRate = Math.Max(0, snap.BytesSent - _lastTxBytes) / secs;
-                            TxtSpeedDl.Text = $"⬇ {FormatSpeed(dlRate)}";
-                            TxtSpeedUl.Text = $"⬆ {FormatSpeed(ulRate)}";
+                            currentDlRate = Math.Max(0, snap.BytesReceived - _lastRxBytes) / secs;
+                            currentUlRate = Math.Max(0, snap.BytesSent - _lastTxBytes) / secs;
+                            TxtSpeedDl.Text = $"⬇ {FormatSpeed(currentDlRate)}";
+                            TxtSpeedUl.Text = $"⬆ {FormatSpeed(currentUlRate)}";
                         }
                     }
                     _lastRxBytes = snap.BytesReceived;
@@ -1682,9 +1742,11 @@ namespace AionToolPro.Desktop
                     string primaryDns = snap.DnsServers.FirstOrDefault() ?? "DHCP";
                     var matchedProvider = _service.GetAllDnsProviders().FirstOrDefault(p => p.PrimaryIp == primaryDns);
                     bool dohActive = _enableWindowsDoh && matchedProvider != null && matchedProvider.HasDoh;
-                    TxtActiveDns.Text = matchedProvider != null
+                    string activeDnsLabel = matchedProvider != null
                         ? $"{primaryDns} · {matchedProvider.Name}{(dohActive ? " · DoH" : "")}"
                         : (snap.DnsServers.Count > 0 ? string.Join(" , ", snap.DnsServers) : "Automatic DHCP");
+                    TxtActiveDns.Text = activeDnsLabel;
+                    _dnsSessionTracker.UpdateTraffic(snap.InterfaceName, primaryDns, activeDnsLabel, dohActive, snap.BytesReceived, snap.BytesSent, currentDlRate, currentUlRate);
 
                     if (_lastDetectedPrimaryDns != primaryDns)
                     {
@@ -1742,7 +1804,9 @@ namespace AionToolPro.Desktop
             try
             {
                 string activeIface = _selectedInterface;
-                _detectedRouterIp = await _service.DetectRouterGatewayIpAsync(activeIface);
+                var adapterCtx = await _service.CaptureAdapterProbeContextAsync(activeIface);
+                _lastAdapterIsUp = adapterCtx.IsUp;
+                _detectedRouterIp = adapterCtx.GatewayIp;
 
                 int probeGen = _pingGeneration;
                 string globalTarget = _globalPingTarget;
@@ -1756,11 +1820,11 @@ namespace AionToolPro.Desktop
                 bool tryRouterTcp = _routerPingTracker.ConsecutiveTimeouts >= 1 || _routerPingTracker.CurrentTransport == ProbeTransport.TcpFallback;
 
                 var tRouter = hasRouter
-                    ? _service.ProbeHostOnAdapterAsync(activeIface, routerIp, timeoutMs: 1200, fallbackTcpPorts: new[] { 80, 443 }, allowTcpFallback: tryRouterTcp, treatTcpRefusedAsAlive: true)
+                    ? _service.ProbeHostWithContextAsync(adapterCtx, routerIp, timeoutMs: 1200, fallbackTcpPorts: new[] { 80, 443 }, allowTcpFallback: tryRouterTcp, treatTcpRefusedAsAlive: true)
                     : Task.FromResult(new PingProbeResult(null, ProbeTransport.Timeout));
 
-                var tIntranet = _service.ProbeHostOnAdapterAsync(activeIface, intranetTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 80 }, allowTcpFallback: tryIntranetTcp);
-                var tGlobal = _service.ProbeHostOnAdapterAsync(activeIface, globalTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 53 }, allowTcpFallback: tryGlobalTcp);
+                var tIntranet = _service.ProbeHostWithContextAsync(adapterCtx, intranetTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 80 }, allowTcpFallback: tryIntranetTcp);
+                var tGlobal = _service.ProbeHostWithContextAsync(adapterCtx, globalTarget, timeoutMs: 2000, fallbackTcpPorts: new[] { 443, 53 }, allowTcpFallback: tryGlobalTcp);
 
                 await Task.WhenAll(tGlobal, tIntranet, tRouter);
                 if (_isClosing || probeGen != _pingGeneration) return;
@@ -1769,6 +1833,7 @@ namespace AionToolPro.Desktop
                 _intranetPingTracker.PushProbe(tIntranet.Result);
                 if (hasRouter)
                     _routerPingTracker.PushProbe(tRouter.Result);
+                _dnsSessionTracker.RecordPingSamples(tGlobal.Result.RttMs, tIntranet.Result.RttMs, tRouter.Result.RttMs, hasRouter);
 
                 string gStr = FormatShortPing(_globalPingTracker, true);
                 string iStr = FormatShortPing(_intranetPingTracker, true);
@@ -2088,6 +2153,7 @@ namespace AionToolPro.Desktop
             _pingGeneration++;
             _globalPingTarget = GlobalPingTargets[nextIdx].Host;
             _globalPingTracker.Reset();
+            _dnsSessionTracker.GlobalStats.Reset();
             TxtPingGlobal.Text = "-- ms";
             TxtJitterGlobal.Text = "±0 ms";
             TxtStatsGlobal.Text = "Loss 0% · --/--/-- ms";
@@ -2106,6 +2172,7 @@ namespace AionToolPro.Desktop
             _pingGeneration++;
             _intranetPingTarget = IntranetPingTargets[nextIdx].Host;
             _intranetPingTracker.Reset();
+            _dnsSessionTracker.IntranetStats.Reset();
             TxtPingIntranet.Text = "-- ms";
             TxtJitterIntranet.Text = "±0 ms";
             TxtStatsIntranet.Text = "Loss 0% · --/--/-- ms";
@@ -2174,9 +2241,9 @@ namespace AionToolPro.Desktop
                     }
                     else
                     {
-                        _service.ClearPerInterfaceDohRegistry(_selectedInterface);
+                        _service.DisablePerInterfaceDohForProvider(_selectedInterface, currentMatched);
                         await _service.FlushDnsCacheAsync(_selectedInterface);
-                        EnqueueConsoleLine($"[DoH] Disabled Windows DoH encryption on '{_selectedInterface}'; continuing with standard DNS.");
+                        EnqueueConsoleLine($"[DoH] Explicitly disabled Windows DoH (DohFlags=0) on '{_selectedInterface}'; continuing with standard DNS.");
                     }
                     await RefreshRealTimeTelemetryAsync();
                 }, "ToggleWindowsDoH");
@@ -2277,7 +2344,9 @@ namespace AionToolPro.Desktop
                     _customAccentHex,
                     _customSecondaryHex,
                     _enableDiagnosticLogs,
-                    _enableWindowsDoh);
+                    _enableWindowsDoh,
+                    _agentLastTargetDomain,
+                    _agentAutoFailover);
 
                 var res = await _service.ExportSettingsBundleAsync(dlg.FileName, current);
                 MessageBox.Show(res.Message, "Export Settings", MessageBoxButton.OK, res.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
@@ -2299,7 +2368,7 @@ namespace AionToolPro.Desktop
                     _isInitialized = false;
                     ApplySettingsModelToUi(bundle.Settings);
                     _isInitialized = true;
-                    ApplyVisualState();
+                    ApplyVisualState(animateTheme: true, forceBackdropRefresh: true);
                     ApplyLanguage(_currentLang);
                     RefreshDnsCatalogUi();
                     ResetLiveTelemetryBaselines();
@@ -2459,14 +2528,13 @@ namespace AionToolPro.Desktop
                     MessageBox.Show("Run the benchmark first to find the fastest DNS provider.", "Benchmark Required", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
-                var provider = _service.GetAllDnsProviders().FirstOrDefault(p => p.Index == _fastestWinner.Index);
-                await _service.ApplyDnsAsync(
-                    _selectedInterface,
-                    _fastestWinner.PrimaryIp,
-                    _fastestWinner.SecondaryIp,
-                    _fastestWinner.Name,
-                    provider?.PrimaryIpv6,
-                    provider?.SecondaryIpv6);
+                var provider = _service.GetAllDnsProviders().FirstOrDefault(p => p.PrimaryIp.Equals(_fastestWinner.PrimaryIp, StringComparison.OrdinalIgnoreCase))
+                            ?? _service.GetAllDnsProviders().FirstOrDefault(p => p.Index == _fastestWinner.Index);
+                var res = provider != null
+                    ? await _service.ApplyProviderDnsAsync(_selectedInterface, provider, _enableWindowsDoh)
+                    : await _service.ApplyDnsAsync(_selectedInterface, _fastestWinner.PrimaryIp, _fastestWinner.SecondaryIp, _fastestWinner.Name);
+                if (!res.Success)
+                    MessageBox.Show(res.Message, "Apply Fastest DNS", MessageBoxButton.OK, MessageBoxImage.Warning);
                 await RefreshRealTimeTelemetryAsync();
             }, "ApplyFastestDNS");
 
@@ -2536,77 +2604,402 @@ namespace AionToolPro.Desktop
                 MessageBox.Show(res.Message, "Remove DoH", MessageBoxButton.OK, res.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
             }, "RemoveDoH");
 
-        // ==================== SINGLE-BUTTON TOGGLE GAME BOOSTER (GREEN / RED) ====================
-        private void UpdateGameBoosterButtonUi()
+        // ==================== SMART ANTI-SANCTION DNS AGENT & GRAPHICAL DNS REPORT ====================
+        private void BuildAgentQuickSiteChips()
         {
-            bool fa = _currentLang == "fa";
-            if (_isGameBoosterActive)
+            AgentQuickSitesWrap.Children.Clear();
+            foreach (var (label, domain) in AgentQuickSites)
             {
-                BtnGameBooster.Style = (Style)FindResource("DangerBtnStyle");
-                BtnGameBooster.Content = fa ? "🛑 گیم‌بوستر فعال (خاموش)" : "🛑 Game Booster: ON";
-                BtnGameBooster.ToolTip = fa
-                    ? "گیم‌بوستر فعال است — برای بازگردانی سرویس‌ها به حالت عادی دوباره کلیک کنید"
-                    : "Game Booster is ACTIVE — Click again to restore normal Windows services";
-                BdGameBoosterPill.Visibility = Visibility.Visible;
-                BdGameBoosterPill.Background = FrozenRedBg;
-                BdGameBoosterPill.BorderBrush = FrozenRed;
-                TxtGameBoosterPill.Foreground = FrozenRed;
-                TxtGameBoosterPill.Text = fa ? "● حالت گیمینگ فعال" : "● GAME MODE ACTIVE";
-            }
-            else
-            {
-                BtnGameBooster.Style = (Style)FindResource("SuccessBtnStyle");
-                BtnGameBooster.Content = fa ? "🎮 بهینه‌ساز گیمینگ" : "🎮 Game Booster";
-                BtnGameBooster.ToolTip = fa
-                    ? "کلیک کنید تا سرویس‌های غیرضروری ویندوز موقتاً متوقف شوند (با کلیک مجدد برمی‌گردند)"
-                    : "Click to safely pause non-essential Windows services for gaming (click again to restore)";
-                BdGameBoosterPill.Visibility = Visibility.Collapsed;
+                var btn = new Button
+                {
+                    Content = label,
+                    Tag = domain,
+                    Style = (Style)FindResource("SecondaryBtnStyle"),
+                    Padding = new Thickness(10, 4, 10, 4),
+                    FontSize = 11,
+                    Margin = new Thickness(0, 0, 6, 4),
+                    ToolTip = $"Scan all DNS servers for {domain} and auto-connect"
+                };
+                btn.Click += async (s, _) =>
+                {
+                    if (s is Button b && b.Tag is string dom)
+                    {
+                        TxtAgentTargetSite.Text = dom;
+                        _agentLastTargetDomain = dom;
+                        SaveCurrentSettings();
+                        await ExecuteAgentSiteScanAndConnectAsync(dom, autoApplyWinner: true);
+                    }
+                };
+                AgentQuickSitesWrap.Children.Add(btn);
             }
         }
 
-        private async void BtnGameBooster_Click(object sender, RoutedEventArgs e) =>
-            await SafeRunAsync(async () =>
+        private void UpdateSmartAgentButtonUi()
+        {
+            bool fa = _currentLang == "fa";
+            if (_isAgentActive)
+            {
+                BtnSmartAgent.Style = (Style)FindResource("DangerBtnStyle");
+                BtnSmartAgent.Content = fa ? "🛑 ایجنت فعال (خاموش)" : "🛑 Agent: ACTIVE";
+                BtnSmartAgent.ToolTip = fa
+                    ? "ایجنت هوشمند روشن است — برای خاموش کردن کلیک کنید"
+                    : "Smart Anti-Sanction Agent is ACTIVE — Click to stop live monitoring";
+                PanelSmartAgent.Visibility = Visibility.Visible;
+                BdAgentStatusPill.Visibility = Visibility.Visible;
+                BdAgentStatusPill.Background = FrozenGreenBg;
+                BdAgentStatusPill.BorderBrush = FrozenGreen;
+                TxtAgentStatusPill.Foreground = FrozenGreen;
+                TxtAgentStatusPill.Text = fa ? "● ایجنت هوشمند فعال" : "● AGENT LIVE";
+            }
+            else
+            {
+                BtnSmartAgent.Style = (Style)FindResource("SuccessBtnStyle");
+                BtnSmartAgent.Content = fa ? "🤖 ایجنت هوشمند" : "🤖 Smart Agent";
+                BtnSmartAgent.ToolTip = fa
+                    ? "روشن کردن ایجنت هوشمند برای رصد زنده پینگ و یافتن خودکار بهترین DNS تحریم‌گذر برای هر سایت"
+                    : "Start Live Smart Anti-Sanction DNS Agent & Auto-Failover Guard";
+                PanelSmartAgent.Visibility = Visibility.Collapsed;
+                BdAgentStatusPill.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void BtnSmartAgent_Click(object sender, RoutedEventArgs e)
+        {
+            bool fa = _currentLang == "fa";
+            _isAgentActive = !_isAgentActive;
+            UpdateSmartAgentButtonUi();
+
+            if (_isAgentActive)
+            {
+                _agentWatchTimer.Start();
+                string msg = fa
+                    ? "ایجنت روشن شد — آدرس هر سایتی را وارد کنید یا یکی از سرویس‌ها را بزنید تا تمام DNSها همزمان تست و بهترین مسیر تحریم‌گذر ست شود."
+                    : "Agent LIVE — monitoring ping/packets. Enter any site or click a chip below to scan all DNS servers and auto-connect.";
+                TxtAgentLiveStatus.Text = msg;
+                _dnsSessionTracker.RecordAgentEvent("Smart Agent activated (Live monitoring ON)");
+                EnqueueConsoleLine("[SMART AGENT] Live Smart Anti-Sanction Agent ACTIVATED.");
+                _service.WriteActionLog(_selectedInterface, "OK Smart Agent activated");
+            }
+            else
+            {
+                _agentWatchTimer.Stop();
+                _dnsSessionTracker.RecordAgentEvent("Smart Agent stopped");
+                EnqueueConsoleLine("[SMART AGENT] Live Smart Agent stopped.");
+                _service.WriteActionLog(_selectedInterface, "OK Smart Agent deactivated");
+            }
+        }
+
+        private void ChkAgentAutoFailover_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!_isInitialized) return;
+            _agentAutoFailover = ChkAgentAutoFailover.IsChecked == true;
+            SaveCurrentSettings();
+        }
+
+        private async void TxtAgentTargetSite_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                await TriggerAgentScanFromInputAsync();
+            }
+        }
+
+        private async void BtnAgentScanConnect_Click(object sender, RoutedEventArgs e) =>
+            await TriggerAgentScanFromInputAsync();
+
+        private async Task TriggerAgentScanFromInputAsync()
+        {
+            string rawInput = TxtAgentTargetSite.Text.Trim();
+            string cleanDomain = AioNetworkService.NormalizeTargetDomain(rawInput);
+            if (string.IsNullOrEmpty(cleanDomain))
             {
                 bool fa = _currentLang == "fa";
-                BtnGameBooster.IsEnabled = false;
-                try
+                MessageBox.Show(
+                    fa ? "لطفاً نام دامنه یا لینک معتبر وارد کنید (مثلاً: discord.com یا http://example.com)"
+                       : "Please enter a valid domain or URL (e.g., discord.com or http://example.com).",
+                    "Smart Agent",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            // Preserve explicit http:// prefix if user entered an HTTP-only URL
+            string storedTarget = rawInput.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                ? "http://" + cleanDomain
+                : cleanDomain;
+
+            TxtAgentTargetSite.Text = storedTarget;
+            _agentLastTargetDomain = storedTarget;
+            _agentConsecutiveTargetFails = 0;
+            SaveCurrentSettings();
+            await ExecuteAgentSiteScanAndConnectAsync(storedTarget, autoApplyWinner: true);
+        }
+
+        private async void BtnAgentApplySelected_Click(object sender, RoutedEventArgs e)
+        {
+            if (GridAgentResults.SelectedItem is not AgentDnsProbeRow row || row.ProviderRef == null)
+            {
+                bool fa = _currentLang == "fa";
+                MessageBox.Show(
+                    fa ? "ابتدا یک ردیف از جدول نتایج ایجنت انتخاب کنید." : "Please select a DNS row from the Agent scan table first.",
+                    "Smart Agent",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            await ApplyDnsProviderWithUiFeedbackAsync(row.ProviderRef);
+            _dnsSessionTracker.RecordAgentEvent($"Manual Agent apply: {row.ProviderName} ({row.PrimaryIp}) for {_agentLastTargetDomain}");
+        }
+
+        private async Task ExecuteAgentSiteScanAndConnectAsync(string rawTarget, bool autoApplyWinner)
+        {
+            if (_isAgentScanning || _isClosing) return;
+            _isAgentScanning = true;
+            bool fa = _currentLang == "fa";
+
+            BtnAgentScanConnect.IsEnabled = false;
+            BtnAgentApplySelected.IsEnabled = false;
+            BdAgentStatusPill.Background = FrozenAmberBg;
+            BdAgentStatusPill.BorderBrush = FrozenAmber;
+            TxtAgentStatusPill.Foreground = FrozenAmber;
+            TxtAgentStatusPill.Text = fa ? "● در حال اسکن..." : "● SCANNING...";
+            TxtAgentLiveStatus.Text = fa
+                ? $"در حال بررسی همزمان تمام سرورهای DNS و تست واقعی HTTPS / HTTP برای {rawTarget}..."
+                : $"Probing all DNS servers in parallel (RFC 1035 + TLS/HTTP check) for {rawTarget}...";
+
+            try
+            {
+                var summary = await _service.RunSmartAgentSiteScanAsync(
+                    _selectedInterface,
+                    rawTarget,
+                    status => Dispatcher.InvokeAsync(() => TxtAgentLiveStatus.Text = status));
+
+                if (_isClosing) return;
+
+                if (summary.WasCancelled)
                 {
-                    if (!_isGameBoosterActive)
+                    TxtAgentLiveStatus.Text = fa
+                        ? $"⏹ اسکن برای {summary.TargetDomain} توسط کاربر متوقف شد (DNS تغییر نکرد)."
+                        : $"⏹ Scan for {summary.TargetDomain} cancelled by user (DNS unchanged).";
+                    return;
+                }
+
+                GridAgentResults.ItemsSource = summary.Results;
+                GridAgentResults.Visibility = summary.Results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+                // STRICT GUARD: Only auto-switch system DNS when a genuinely working non-restricted route was verified!
+                if (summary.FoundWorkingDns && summary.BestMatch != null && summary.BestMatch.ProviderRef != null)
+                {
+                    GridAgentResults.SelectedItem = summary.BestMatch;
+                    var winner = summary.BestMatch.ProviderRef;
+                    _agentConsecutiveTargetFails = 0;
+
+                    if (autoApplyWinner)
                     {
-                        BtnGameBooster.Content = fa ? "⏳ در حال فعال‌سازی..." : "⏳ Activating...";
-                        var res = await _service.OptimizeForGamingAsync();
-                        if (res.Success)
+                        bool alreadyUsingWinner = string.Equals(_lastDetectedPrimaryDns, winner.PrimaryIp, StringComparison.OrdinalIgnoreCase);
+                        if (!alreadyUsingWinner)
                         {
-                            _isGameBoosterActive = true;
+                            var res = await _service.ApplyProviderDnsAsync(_selectedInterface, winner, _enableWindowsDoh);
+                            if (res.Success)
+                            {
+                                _dnsSessionTracker.RecordAgentEvent($"Auto-connected {winner.Name} ({winner.PrimaryIp}) for {summary.TargetDomain} ({summary.BestMatch.ConnectLatencyMs}ms)");
+                                await RefreshRealTimeTelemetryAsync();
+                            }
                         }
-                        else
-                        {
-                            MessageBox.Show(res.Message, "Game Booster", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        }
+
+                        string sinkNote = summary.IspSinkholeDetected
+                            ? (fa ? " · فیلتر ISP (Sinkhole) دور زده شد" : " · ISP Sinkhole Bypassed")
+                            : "";
+                        TxtAgentLiveStatus.Text = fa
+                            ? $"✓ متصل به {winner.Name} ({winner.PrimaryIp}) برای {summary.TargetDomain} — {summary.BestMatch.ConnectLatencyMs}ms ({summary.BestMatch.StatusText}){sinkNote}"
+                            : $"✓ Connected {winner.Name} ({winner.PrimaryIp}) for {summary.TargetDomain} — {summary.BestMatch.ConnectLatencyMs}ms ({summary.BestMatch.StatusText}){sinkNote}";
                     }
                     else
                     {
-                        BtnGameBooster.Content = fa ? "⏳ در حال بازگردانی..." : "⏳ Restoring...";
-                        var res = await _service.RestoreNormalModeAsync();
-                        if (res.Success)
+                        TxtAgentLiveStatus.Text = summary.SummaryMessage;
+                    }
+                }
+                else if (summary.BestMatch != null)
+                {
+                    // Only restricted (403/451) rows connected — highlight without forcing DNS change!
+                    GridAgentResults.SelectedItem = summary.BestMatch;
+                    TxtAgentLiveStatus.Text = fa
+                        ? $"⚠️ همه سرورهای پاسخ‌گو برای {summary.TargetDomain} خطای محدودیت/تحریم ({summary.BestMatch.StatusText}) دادند — DNS سیستم تغییر نکرد (در صورت تمایل از Apply Row استفاده کنید)."
+                        : $"⚠️ {summary.SummaryMessage}";
+                }
+                else
+                {
+                    TxtAgentLiveStatus.Text = fa
+                        ? $"⚠️ هیچ سرور DNS فعالی نتوانست از طریق HTTPS یا HTTP به {summary.TargetDomain} متصل شود (ممکن است نیاز به VPN داشته باشد)."
+                        : $"⚠️ {summary.SummaryMessage}";
+                }
+            }
+            catch (Exception ex)
+            {
+                TxtAgentLiveStatus.Text = $"⚠️ Agent scan error: {ex.Message}";
+                App.WriteCrashLog("SmartAgentScan", ex);
+            }
+            finally
+            {
+                _isAgentScanning = false;
+                if (!_isClosing)
+                {
+                    BtnAgentScanConnect.IsEnabled = true;
+                    BtnAgentApplySelected.IsEnabled = true;
+                    if (_isAgentActive)
+                    {
+                        BdAgentStatusPill.Background = FrozenGreenBg;
+                        BdAgentStatusPill.BorderBrush = FrozenGreen;
+                        TxtAgentStatusPill.Foreground = FrozenGreen;
+                        TxtAgentStatusPill.Text = fa ? "● ایجنت هوشمند فعال" : "● AGENT LIVE";
+                    }
+                }
+            }
+        }
+
+        private async Task RunAgentLiveWatchTickAsync()
+        {
+            // Never trigger failover scans when adapter is physically offline/disconnected!
+            if (!_isAgentActive || !_agentAutoFailover || _isAgentScanning || _isClosing || !_lastAdapterIsUp)
+                return;
+
+            // Enforce minimum 45s cooldown between automatic failovers to avoid DNS flapping
+            if ((DateTime.UtcNow - _lastAgentFailoverUtc).TotalSeconds < 45)
+                return;
+
+            string target = string.IsNullOrWhiteSpace(_agentLastTargetDomain) ? "discord.com" : _agentLastTargetDomain;
+            bool highLoss = _globalPingTracker.WindowSamples >= 6 && _globalPingTracker.LossPercent >= 25.0;
+            bool consecutiveDrops = _globalPingTracker.ConsecutiveTimeouts >= 3;
+
+            bool targetSiteFailed = false;
+            if (!highLoss && !consecutiveDrops)
+            {
+                var ctx = await _service.CaptureAdapterProbeContextAsync(_selectedInterface);
+                if (!ctx.IsUp) return;
+
+                bool reachable = await _service.CheckLiveTargetSiteReachableAsync(ctx, target);
+                if (reachable)
+                {
+                    _agentConsecutiveTargetFails = 0;
+                }
+                else
+                {
+                    _agentConsecutiveTargetFails++;
+                    if (_agentConsecutiveTargetFails >= 2)
+                        targetSiteFailed = true;
+                }
+            }
+
+            if (highLoss || consecutiveDrops || targetSiteFailed)
+            {
+                _lastAgentFailoverUtc = DateTime.UtcNow;
+                _agentConsecutiveTargetFails = 0;
+
+                string reason = targetSiteFailed
+                    ? $"target site '{target}' became unreachable"
+                    : $"high packet loss ({_globalPingTracker.LossPercent:F1}%)";
+
+                EnqueueConsoleLine($"[SMART AGENT] Auto-Failover triggered ({reason}) — scanning all DNS servers for '{target}'...");
+                _dnsSessionTracker.RecordAgentEvent($"Auto-failover triggered ({reason})");
+                await ExecuteAgentSiteScanAndConnectAsync(target, autoApplyWinner: true);
+            }
+        }
+
+        private async void BtnDnsSessionReport_Click(object sender, RoutedEventArgs e) =>
+            await SafeRunAsync(async () =>
+            {
+                bool fa = _currentLang == "fa";
+                BtnDashDnsReport.IsEnabled = false;
+                BtnDashDnsReport.Content = fa ? "⏳ در حال اسکن..." : "⏳ Scanning...";
+
+                try
+                {
+                    EnqueueConsoleLine("[REPORT] Running live verification scan for active DNS session report...");
+                    string activeIface = _selectedInterface;
+
+                    var probeCtx = await _service.CaptureAdapterProbeContextAsync(activeIface);
+                    bool hasGw = !string.IsNullOrWhiteSpace(probeCtx.GatewayIp);
+
+                    // Run a quick 2-probe verification burst so stats are fresh even if clicked early
+                    for (int k = 0; k < 2; k++)
+                    {
+                        var tG = _service.ProbeHostWithContextAsync(probeCtx, _globalPingTarget, 1500, new[] { 443, 53 }, allowTcpFallback: true);
+                        var tI = _service.ProbeHostWithContextAsync(probeCtx, _intranetPingTarget, 1500, new[] { 443, 80 }, allowTcpFallback: true);
+                        var tR = hasGw
+                            ? _service.ProbeHostWithContextAsync(probeCtx, probeCtx.GatewayIp, 1000, new[] { 80, 443 }, allowTcpFallback: true, treatTcpRefusedAsAlive: true)
+                            : Task.FromResult(new PingProbeResult(null, ProbeTransport.Timeout));
+                        await Task.WhenAll(tG, tI, tR);
+                        _globalPingTracker.PushProbe(tG.Result);
+                        _intranetPingTracker.PushProbe(tI.Result);
+                        if (hasGw) _routerPingTracker.PushProbe(tR.Result);
+                        _dnsSessionTracker.RecordPingSamples(tG.Result.RttMs, tI.Result.RttMs, tR.Result.RttMs, hasGw);
+                    }
+
+                    var snap = await _service.CaptureAdapterTelemetryAsync(activeIface);
+                    string reportText = _service.BuildGraphicalDnsSessionReport(
+                        snap,
+                        _dnsSessionTracker,
+                        _globalPingTracker,
+                        _intranetPingTracker,
+                        _routerPingTracker,
+                        _globalPingTarget,
+                        _intranetPingTarget,
+                        _isAgentActive,
+                        _agentLastTargetDomain,
+                        _lastNicDropCount);
+
+                    string safeDnsName = new string(_dnsSessionTracker.ActivePrimaryIp
+                        .Select(c => char.IsLetterOrDigit(c) || c == '.' || c == '-' ? c : '_').ToArray());
+                    string desktopDir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+
+                    var dlg = new SaveFileDialog
+                    {
+                        Title = fa ? "ذخیره گزارش گرافیکی دی‌ان‌اس (.txt)" : "Save Graphical DNS Telemetry Report (.txt)",
+                        Filter = "Text Report (*.txt)|*.txt",
+                        InitialDirectory = System.IO.Directory.Exists(desktopDir) ? desktopDir : string.Empty,
+                        FileName = $"AionToolPro_DNS_Report_{safeDnsName}_{DateTime.Now:yyyyMMdd_HHmmss}.txt"
+                    };
+
+                    if (dlg.ShowDialog() != true) return;
+
+                    // Write UTF-8 WITH BOM so Windows Notepad displays Unicode box-drawing borders & sparklines cleanly
+                    await System.IO.File.WriteAllTextAsync(dlg.FileName, reportText, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                    _service.WriteActionLog(activeIface, $"OK Exported DNS Session Report: {System.IO.Path.GetFileName(dlg.FileName)}");
+                    EnqueueConsoleLine($"[REPORT] Saved graphical DNS report to: {dlg.FileName}");
+
+                    var openChoice = MessageBox.Show(
+                        fa
+                            ? $"گزارش گرافیکی دی‌ان‌اس با موفقیت ذخیره شد:\n{dlg.FileName}\n\nآیا فایل گزارش الان در Notepad باز شود؟"
+                            : $"Graphical DNS telemetry report saved successfully:\n{dlg.FileName}\n\nOpen the report in Notepad now?",
+                        fa ? "گزارش دی‌ان‌اس آماده است" : "DNS Report Ready",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Information);
+
+                    if (openChoice == MessageBoxResult.Yes)
+                    {
+                        try
                         {
-                            _isGameBoosterActive = false;
+                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = "notepad.exe",
+                                Arguments = $"\"{dlg.FileName}\"",
+                                UseShellExecute = true
+                            });
                         }
-                        else
-                        {
-                            MessageBox.Show(res.Message, "Game Booster", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        }
+                        catch { }
                     }
                 }
                 finally
                 {
                     if (!_isClosing)
                     {
-                        UpdateGameBoosterButtonUi();
-                        BtnGameBooster.IsEnabled = true;
+                        BtnDashDnsReport.Content = fa ? "📊 گزارش دی‌ان‌اس" : "📊 DNS Report";
+                        BtnDashDnsReport.IsEnabled = true;
                     }
                 }
-            }, "GameBooster");
+            }, "DnsSessionReport");
 
         private async void BtnSpeedTest_Click(object sender, RoutedEventArgs e) =>
             await SafeRunAsync(async () =>
